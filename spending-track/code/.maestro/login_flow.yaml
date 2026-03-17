@@ -1,0 +1,11 @@
+appId: host.exp.exponent
+---
+- openLink: exp://localhost:8081
+- assertVisible: "Sign In"
+- tapOn: "hello@example.com"
+- inputText: "user@example.com"
+- tapOn: "••••••••"
+- inputText: "password"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Alex Johnson"

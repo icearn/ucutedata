@@ -1,0 +1,25 @@
+appId: host.exp.exponent # Expo Go
+---
+- clearState
+- openLink: exp://localhost:8081
+# Login Step
+- assertVisible: "Sign In"
+- tapOn: "hello@example.com"
+- inputText: "user@example.com"
+- tapOn: "••••••••"
+- inputText: "password"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Alex Johnson"
+# Now proceed with Add Receipt
+- assertVisible: "Add Receipt"
+- tapOn: "Add Receipt"
+- assertVisible: "Amount"
+- inputText: "150"
+- tapOn: "What is this for?"
+- inputText: "Grocery Shopping"
+- hideKeyboard
+- tapOn: "Shopping" # Select Category
+- tapOn: "Save Transaction"
+- assertVisible: "Grocery Shopping" # Verify new item
+
