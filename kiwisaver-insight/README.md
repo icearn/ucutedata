@@ -2,6 +2,14 @@
 
 Agent-ready toolkit for harvesting ASB KiwiSaver unit prices, persisting them to Postgres, and serving analytics (trend charts + return calculations) over HTTP or CLI.
 
+## Features
+
+- **Data Harvesting**: Automated scraping of ASB KiwiSaver unit prices.
+- **Data Persistence**: Robust storage in PostgreSQL with upsert capabilities.
+- **Analytics API**: HTTP endpoints for trend charts, return calculations, and portfolio analysis.
+- **Strategy Backtesting**: Simulate investment strategies over historical data (up to 10 years).
+- **Mobile Integration**: Backend support for the React Native mobile app.
+
 ## Project Layout
 ```
 kiwisaver-insight/
@@ -58,6 +66,8 @@ The app connects to the backend at `http://localhost:8000` (iOS/Web) or `http://
 | POST | `/api/asb/fetch` | Fetches ASB unit prices for a date range; optional `store=true` persists to Postgres. |
 | POST | `/api/asb/trends` | Returns unit-price trend data and a base64 PNG chart for the requested schemes. |
 | POST | `/api/asb/returns` | Calculates portfolio returns for one or more schemes (table + chart). |
+| POST | `/api/analysis/current-scheme` | **New**: Returns historical data and projected outcomes for selected schemes. |
+| POST | `/api/strategy/backtest` | **New**: Runs a 10-year backtest for a user-defined switching strategy. |
 | GET  | `/health` | Liveness probe. |
 
 Example payload:
@@ -75,6 +85,27 @@ POST /api/asb/returns
 - **One-off / cron**: call `python3 -m kiwisaver_insight.main --store --days 1` from cron/systemd.
 - **Inside Docker**: run the container with `command: ["python", "-m", "kiwisaver_insight.main", "--store", "--days", "1"]` for batch jobs.
 - **API mode (default CMD)** keeps the service online for agent workflows (e.g., n8n HTTP Request nodes).
+
+## Development
+
+### Running Tests
+The project uses `pytest` for testing.
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_analysis.py
+```
+
+### Linting & Formatting
+Ensure code quality before committing:
+```bash
+# Example (adjust based on your preferred tools)
+black kiwisaver_insight tests
+flake8 kiwisaver_insight tests
+```
 
 ## Notes
 - Uses the legacy ASB iframe endpoint to access historical unit prices by supplying day/month/year form fields.

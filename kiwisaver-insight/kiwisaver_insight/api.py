@@ -16,6 +16,16 @@ from kiwisaver_insight.utils.db import insert_unit_prices, list_schemes
 
 app = FastAPI(title="KiwiSaver Insight API", version="1.0.0")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class FetchRequest(BaseModel):
     start_date: date = Field(..., description="Start date (inclusive)")
@@ -108,3 +118,62 @@ class UserProfile(BaseModel):
 def save_user_profile(profile: UserProfile):
     # TODO: Persist to database
     return {"status": "saved", "profile": profile}
+
+
+from kiwisaver_insight.services.analysis_service import (
+    generate_unit_price_history,
+    calculate_outcome,
+    simulate_strategy,
+    SwitchCondition,
+    AVAILABLE_SCHEMES
+)
+
+# ... (keep existing imports)
+
+# ... (keep existing code)
+
+class CurrentSchemeRequest(BaseModel):
+    scheme_ids: List[str]
+    years: int
+    initial_funds: float
+    monthly_contribution: float
+
+@app.post("/api/analysis/current-scheme")
+def api_current_scheme_analysis(req: CurrentSchemeRequest):
+    results = []
+    # Get scheme details for response
+    schemes_map = {s.id: s for s in AVAILABLE_SCHEMES}
+    
+    for scheme_id in req.scheme_ids:
+        scheme = schemes_map.get(scheme_id)
+        if not scheme:
+            continue
+            
+        history = generate_unit_price_history(scheme_id, req.years)
+        outcome = calculate_outcome(history, req.initial_funds, req.monthly_contribution)
+        
+        results.append({
+            "scheme": scheme.model_dump(),
+            "history": history,
+            "outcome": outcome
+        })
+        
+    return {"results": results}
+
+
+class StrategyBacktestRequest(BaseModel):
+    conditions: List[SwitchCondition]
+    initial_funds: float
+    monthly_contribution: float
+    years: int = 10
+
+@app.post("/api/strategy/backtest")
+def api_strategy_backtest(req: StrategyBacktestRequest):
+    simulation = simulate_strategy(
+        req.conditions, 
+        req.initial_funds, 
+        req.monthly_contribution, 
+        req.years
+    )
+    
+    return simulation

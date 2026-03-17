@@ -1,0 +1,171 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`TransactionCard renders favorite star when isFavorite is true 1`] = `
+<View
+  className="bg-white rounded-xl p-4 shadow-sm border border-border mb-3 flex-row justify-between"
+>
+  <View
+    className="flex-row items-start flex-1 gap-3"
+  >
+    <View
+      className="flex-1"
+    >
+      <Text
+        className="font-semibold text-text mb-1"
+        numberOfLines={1}
+      >
+        Grocery Store
+      </Text>
+      <View
+        className="flex-row items-center gap-2 mb-2 flex-wrap"
+      >
+        <View
+          className="px-2 py-1 rounded-full"
+          style={
+            {
+              "backgroundColor": "#f59e0b20",
+            }
+          }
+        >
+          <Text
+            className="text-xs"
+            style={
+              {
+                "color": "#f59e0b",
+              }
+            }
+          >
+            Food
+          </Text>
+        </View>
+        <View
+          className="flex-row items-center gap-1"
+        >
+          <RNSVGSvgView
+            align="xMidYMid"
+            bbHeight={12}
+            bbWidth={12}
+            fill="none"
+            focusable={false}
+            height={12}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            stroke="#64748b"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 12,
+                  "width": 12,
+                },
+              ]
+            }
+            vbHeight={24}
+            vbWidth={24}
+            width={12}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <RNSVGGroup
+              fill={null}
+              propList={
+                [
+                  "fill",
+                  "stroke",
+                  "strokeWidth",
+                  "strokeLinecap",
+                  "strokeLinejoin",
+                ]
+              }
+              stroke={
+                {
+                  "payload": 4284773515,
+                  "type": 0,
+                }
+              }
+              strokeLinecap={1}
+              strokeLinejoin={1}
+              strokeWidth={2}
+            >
+              <RNSVGPath
+                d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                    "strokeLinecap",
+                    "strokeLinejoin",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4284773515,
+                    "type": 0,
+                  }
+                }
+                strokeLinecap={1}
+                strokeLinejoin={1}
+                strokeWidth={2}
+              />
+              <RNSVGCircle
+                cx="12"
+                cy="10"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                    "strokeLinecap",
+                    "strokeLinejoin",
+                  ]
+                }
+                r="3"
+                stroke={
+                  {
+                    "payload": 4284773515,
+                    "type": 0,
+                  }
+                }
+                strokeLinecap={1}
+                strokeLinejoin={1}
+                strokeWidth={2}
+              />
+            </RNSVGGroup>
+          </RNSVGSvgView>
+          <Text
+            className="text-xs text-text-secondary"
+            numberOfLines={1}
+          >
+            Downtown
+          </Text>
+        </View>
+      </View>
+      <Text
+        className="text-xs text-text-secondary"
+      >
+        Today
+      </Text>
+    </View>
+  </View>
+  <View
+    className="items-end gap-2 ml-3"
+  >
+    <Text
+      className="font-bold text-text"
+    >
+      $
+      50.00
+    </Text>
+  </View>
+</View>
+`;

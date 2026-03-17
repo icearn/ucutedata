@@ -40,4 +40,34 @@ export const getReturns = async (
   return response.data;
 };
 
+export const fetchCurrentSchemeAnalysis = async (
+  schemeIds: string[],
+  years: number,
+  initialFunds: number,
+  monthlyContribution: number
+) => {
+  const response = await api.post('/api/analysis/current-scheme', {
+    scheme_ids: schemeIds,
+    years,
+    initial_funds: initialFunds,
+    monthly_contribution: monthlyContribution,
+  });
+  return response.data;
+};
+
+export const runStrategyBacktest = async (
+  conditions: any[],
+  initialFunds: number,
+  monthlyContribution: number,
+  years: number = 10
+) => {
+  const response = await api.post('/api/strategy/backtest', {
+    conditions,
+    initial_funds: initialFunds,
+    monthly_contribution: monthlyContribution,
+    years,
+  });
+  return response.data;
+};
+
 export default api;

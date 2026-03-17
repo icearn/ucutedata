@@ -1,0 +1,20 @@
+appId: host.exp.exponent
+---
+- clearState
+- openLink: exp://localhost:8081
+# Login Step
+- assertVisible: "Sign In"
+- tapOn: "hello@example.com"
+- inputText: "user@example.com"
+- tapOn: "••••••••"
+- inputText: "password"
+- hideKeyboard
+- tapOn: "Sign In"
+- assertVisible: "Alex Johnson"
+# Scan Flow UI Check
+- tapOn: "Add Receipt"
+- assertVisible: "Camera"
+- assertVisible: "Gallery"
+# Note: Interacting with System Picker (Camera/Gallery) is fragile in Maestro cloud/local.
+# We verify the UI entry points exist.
+# Manual testing is recommended for the actual image selection.
