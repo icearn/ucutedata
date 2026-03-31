@@ -1,3 +1,5 @@
+**/__pycache__/
+*.py[cod]
 spending-track/deps/*.zip
 spending-track/deps/**/**/*.jar
 spending-track/deps/**/**/*.bat
@@ -6,5 +8,5 @@ spending-track/deps/maestro/maestro/bin/maestro
 kiwisaver-insight/kiwisaver_insight/__pycache__/*
 kiwisaver-insight/tests/__pycache__/*
 kiwisaver-insight/kiwisaver_insight/services/__pycache__/*
-kiwisaver-insight/kiwisaver_insight/__pycache__/*
+kiwisaver-insight/kiwisaver_insight/__pycache__/**
 spending-track/tests/receipts/*.jpg
