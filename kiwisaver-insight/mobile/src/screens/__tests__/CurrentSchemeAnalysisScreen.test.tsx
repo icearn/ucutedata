@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, waitFor } from '@testing-library/react-native';
 import { CurrentSchemeAnalysisScreen } from '../CurrentSchemeAnalysisScreen';
 import { NavigationContainer } from '@react-navigation/native';
 
@@ -53,13 +53,15 @@ jest.mock('lucide-react-native', () => ({
 
 describe('CurrentSchemeAnalysisScreen', () => {
   it('renders correctly', async () => {
-    const { getByText } = render(
+    const view = render(
       <NavigationContainer>
         <CurrentSchemeAnalysisScreen />
       </NavigationContainer>
     );
 
-    expect(getByText('Current Scheme Analysis')).toBeTruthy();
-    expect(getByText('Welcome to Your Analysis')).toBeTruthy();
+    await waitFor(() => {
+      expect(view.getByText('Current Scheme Analysis')).toBeTruthy();
+      expect(view.getByText('Welcome to Your Analysis')).toBeTruthy();
+    });
   });
 });
