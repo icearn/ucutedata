@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, List, Sequence
@@ -34,25 +35,59 @@ def daterange(start: date, end: date) -> Iterable[date]:
         current += timedelta(days=1)
 
 
+def _snapshot_signature(rows: Sequence[Dict]) -> tuple[tuple[str, float], ...]:
+    return tuple(
+        (row["scheme"], round(float(row["unit_price"]), 6))
+        for row in sorted(rows, key=lambda item: item["scheme"])
+    )
+
+
+def _serialise_rows(rows: Sequence[Dict]) -> List[Dict]:
+    return [
+        {**row, "date": row["date"].isoformat() if isinstance(row["date"], date) else row["date"]}
+        for row in rows
+    ]
+
+
+def _fetch_unique_history_rows(start: date, end: date) -> List[Dict]:
+    """
+    ASB serves the latest available snapshot for weekends and future dates.
+    Keep only the first day on which a new snapshot appears inside the range.
+    """
+
+    collected: List[Dict] = []
+    last_signature: tuple[tuple[str, float], ...] | None = None
+
+    for single_date in daterange(start, end):
+        day_rows = crawler.fetch_prices(single_date)
+        if not day_rows:
+            continue
+
+        signature = _snapshot_signature(day_rows)
+        if signature == last_signature:
+            if settings.asb_history_backoff_seconds:
+                time.sleep(settings.asb_history_backoff_seconds)
+            continue
+
+        collected.extend([{**row, "date": single_date} for row in day_rows])
+        last_signature = signature
+
+        if settings.asb_history_backoff_seconds:
+            time.sleep(settings.asb_history_backoff_seconds)
+
+    return collected
+
+
 def fetch_history(start: date, end: date, store: bool = False) -> List[Dict]:
     if start > end:
         raise ValueError("start date must be before end date")
 
-    collected: List[Dict] = []
-    for single_date in daterange(start, end):
-        day_rows = crawler.fetch_prices(single_date)
-        collected.extend(day_rows)
-        if settings.asb_history_backoff_seconds:
-            time.sleep(settings.asb_history_backoff_seconds)
+    collected = _fetch_unique_history_rows(start, end)
 
     if store and collected:
         insert_unit_prices(crawler.provider, collected)
 
-    # Normalise dates to ISO for API consumers
-    return [
-        {**row, "date": row["date"].isoformat() if isinstance(row["date"], date) else row["date"]}
-        for row in collected
-    ]
+    return _serialise_rows(collected)
 
 
 def ensure_history(start: date, end: date, min_points: int = 2):
@@ -174,3 +209,52 @@ def calculate_returns(
 
     chart_b64 = generate_trend_chart(plot_series, metric="portfolio_value") if plot_series else None
     return {"comparison": comparison, "chart": chart_b64}
+
+
+def current_price_changes(lookback_days: int = 14, store: bool = True, end: date | None = None) -> Dict:
+    if lookback_days < 2:
+        raise ValueError("lookback_days must be at least 2")
+
+    end_date = end or date.today()
+    start_date = end_date - timedelta(days=lookback_days - 1)
+    rows = _fetch_unique_history_rows(start_date, end_date)
+
+    if store and rows:
+        insert_unit_prices(crawler.provider, rows)
+
+    snapshots: "OrderedDict[str, List[Dict]]" = OrderedDict()
+    for row in rows:
+        snapshot_date = row["date"].isoformat() if isinstance(row["date"], date) else str(row["date"])
+        snapshots.setdefault(snapshot_date, []).append(row)
+
+    if len(snapshots) < 2:
+        raise ValueError("Not enough distinct ASB price snapshots were found to compute changes")
+
+    snapshot_dates = list(snapshots.keys())
+    latest_date = snapshot_dates[-1]
+    previous_date = snapshot_dates[-2]
+    latest_rows = {row["scheme"]: row for row in snapshots[latest_date]}
+    previous_rows = {row["scheme"]: row for row in snapshots[previous_date]}
+
+    funds = []
+    for scheme in sorted(latest_rows):
+        latest_price = float(latest_rows[scheme]["unit_price"])
+        previous_price = float(previous_rows.get(scheme, latest_rows[scheme])["unit_price"])
+        unit_change = round(latest_price - previous_price, 6)
+        percent_change = round((unit_change / previous_price) * 100, 4) if previous_price else 0.0
+        funds.append(
+            {
+                "scheme": scheme,
+                "current_unit_price": latest_price,
+                "previous_unit_price": previous_price,
+                "unit_change": unit_change,
+                "percent_change": percent_change,
+            }
+        )
+
+    return {
+        "provider": crawler.provider,
+        "latest_price_date": latest_date,
+        "previous_price_date": previous_date,
+        "funds": funds,
+    }

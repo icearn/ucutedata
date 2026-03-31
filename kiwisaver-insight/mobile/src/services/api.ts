@@ -2,7 +2,8 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 
 // Use 10.0.2.2 for Android Emulator, localhost for iOS Simulator
-const BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
+const DEFAULT_BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
+const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_BASE_URL;
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -16,11 +17,27 @@ export const getSchemes = async () => {
   return response.data;
 };
 
-export const getTrends = async (startDate: string, endDate: string, schemes?: string[]) => {
+export const getCurrentPrices = async (lookbackDays: number = 14, store: boolean = true) => {
+  const response = await api.get('/api/asb/current-prices', {
+    params: {
+      lookback_days: lookbackDays,
+      store,
+    },
+  });
+  return response.data;
+};
+
+export const getTrends = async (
+  startDate: string,
+  endDate: string,
+  schemes?: string[],
+  includeChart: boolean = true
+) => {
   const response = await api.post('/api/asb/trends', {
     start_date: startDate,
     end_date: endDate,
     schemes,
+    include_chart: includeChart,
   });
   return response.data;
 };

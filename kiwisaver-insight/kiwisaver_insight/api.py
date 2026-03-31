@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from kiwisaver_insight.services.asb_service import (
     calculate_returns,
+    current_price_changes,
     fetch_history,
     generate_trend_chart,
     trend_series,
@@ -37,6 +38,7 @@ class TrendRequest(BaseModel):
     start_date: date
     end_date: date
     schemes: Optional[List[str]] = None
+    include_chart: bool = True
 
 
 class ReturnsRequest(BaseModel):
@@ -79,11 +81,22 @@ def api_trends(req: TrendRequest):
     series = trend_series(req.start_date, req.end_date, schemes=req.schemes)
     if not series:
         raise HTTPException(status_code=404, detail="No data available for requested period")
-    chart = generate_trend_chart(series)
+    chart = generate_trend_chart(series) if req.include_chart else None
     return {
         "series": [s.__dict__ for s in series],
         "chart": chart,
     }
+
+
+@app.get("/api/asb/current-prices")
+def api_current_prices(
+    lookback_days: int = Query(14, ge=2, le=60),
+    store: bool = Query(True),
+):
+    try:
+        return current_price_changes(lookback_days=lookback_days, store=store)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/asb/returns")
