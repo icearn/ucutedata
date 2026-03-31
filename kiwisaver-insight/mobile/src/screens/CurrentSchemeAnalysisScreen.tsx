@@ -19,6 +19,9 @@ const AVAILABLE_SCHEMES: SchemeData[] = [
   { id: '4', name: 'ASB KiwiSaver Growth', provider: 'ASB', type: 'Growth', color: '#f59e0b' },
   { id: '5', name: 'Simplicity KiwiSaver Growth', provider: 'Simplicity', type: 'Growth', color: '#ec4899' },
   { id: '6', name: 'BNZ KiwiSaver Balanced', provider: 'BNZ', type: 'Balanced', color: '#06b6d4' },
+  { id: '7', name: 'ANZ KiwiSaver High Growth Fund', provider: 'ANZ', type: 'Aggressive', color: '#0ea5e9' },
+  { id: '8', name: 'ASB KiwiSaver Aggressive Fund', provider: 'ASB', type: 'Aggressive', color: '#f97316' },
+  { id: '9', name: 'Westpac KiwiSaver High Growth Fund', provider: 'Westpac', type: 'Aggressive', color: '#ef4444' },
 ];
 
 const PERIODS: { label: string; value: TimePeriod; years: number }[] = [

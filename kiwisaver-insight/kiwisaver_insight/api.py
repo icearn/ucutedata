@@ -4,6 +4,7 @@ from datetime import date
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from kiwisaver_insight.services.asb_service import (
@@ -13,9 +14,26 @@ from kiwisaver_insight.services.asb_service import (
     generate_trend_chart,
     trend_series,
 )
+from kiwisaver_insight.services.aggressive_funds_service import (
+    collect_aggressive_unit_prices,
+    current_aggressive_prices,
+    list_aggressive_schemes,
+)
+from kiwisaver_insight.services.verification_service import verify_live_sources_against_db
 from kiwisaver_insight.utils.db import insert_unit_prices, list_schemes
 
-app = FastAPI(title="KiwiSaver Insight API", version="1.0.0")
+API_DESCRIPTION = """
+Operational API for KiwiSaver unit-price ingestion, storage, analytics, and verification.
+
+- Swagger UI: `/docs`
+- OpenAPI JSON: `/openapi.json`
+"""
+
+app = FastAPI(
+    title="KiwiSaver Insight API",
+    version="1.0.0",
+    description=API_DESCRIPTION.strip(),
+)
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -59,6 +77,17 @@ class IngestRequest(BaseModel):
     rows: List[IngestRow]
 
 
+class AggressiveCollectRequest(BaseModel):
+    start_date: date
+    end_date: date
+    store: bool = Field(True, description="Persist fetched prices to Postgres")
+
+
+@app.get("/", include_in_schema=False)
+def api_index():
+    return RedirectResponse(url="/docs")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -67,6 +96,11 @@ def health():
 @app.get("/api/asb/schemes")
 def api_schemes():
     return {"provider": "ASB", "schemes": list_schemes("ASB")}
+
+
+@app.get("/api/aggressive-funds/schemes")
+def api_aggressive_schemes():
+    return {"schemes": list_aggressive_schemes()}
 
 
 @app.post("/api/asb/fetch")
@@ -97,6 +131,34 @@ def api_current_prices(
         return current_price_changes(lookback_days=lookback_days, store=store)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/aggressive-funds/collect")
+def api_collect_aggressive_funds(req: AggressiveCollectRequest):
+    try:
+        rows = collect_aggressive_unit_prices(req.start_date, req.end_date, store=req.store)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"count": len(rows), "data": rows}
+
+
+@app.get("/api/aggressive-funds/current-prices")
+def api_current_aggressive_prices(
+    lookback_days: int = Query(30, ge=5, le=120),
+    store: bool = Query(True),
+):
+    try:
+        return current_aggressive_prices(lookback_days=lookback_days, store=store)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/verification/live-vs-db")
+def api_live_vs_db_verification():
+    try:
+        return verify_live_sources_against_db()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/asb/returns")

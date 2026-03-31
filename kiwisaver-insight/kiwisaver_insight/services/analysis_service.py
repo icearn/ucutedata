@@ -18,6 +18,9 @@ AVAILABLE_SCHEMES = [
     SchemeData(id='4', name='ASB KiwiSaver Growth', provider='ASB', type='Growth', color='#f59e0b'),
     SchemeData(id='5', name='Simplicity KiwiSaver Growth', provider='Simplicity', type='Growth', color='#ec4899'),
     SchemeData(id='6', name='BNZ KiwiSaver Balanced', provider='BNZ', type='Balanced', color='#06b6d4'),
+    SchemeData(id='7', name='ANZ KiwiSaver High Growth Fund', provider='ANZ', type='Aggressive', color='#0ea5e9'),
+    SchemeData(id='8', name='ASB KiwiSaver Aggressive Fund', provider='ASB', type='Aggressive', color='#f97316'),
+    SchemeData(id='9', name='Westpac KiwiSaver High Growth Fund', provider='Westpac', type='Aggressive', color='#ef4444'),
 ]
 
 def generate_unit_price_history(scheme_id: str, years: int) -> List[Dict[str, Any]]:
@@ -32,11 +35,20 @@ def generate_unit_price_history(scheme_id: str, years: int) -> List[Dict[str, An
         'Conservative': 0.04,
         'Balanced': 0.06,
         'Growth': 0.08,
+        'Aggressive': 0.095,
     }
 
     annual_return = base_returns.get(scheme.type, 0.06)
     monthly_return = annual_return / 12
-    volatility = 0.03 if scheme.type == 'Growth' else 0.02 if scheme.type == 'Balanced' else 0.01
+    volatility = (
+        0.04
+        if scheme.type == 'Aggressive'
+        else 0.03
+        if scheme.type == 'Growth'
+        else 0.02
+        if scheme.type == 'Balanced'
+        else 0.01
+    )
 
     price = 1.0
     

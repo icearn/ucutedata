@@ -2,6 +2,8 @@ export const KIWISAVER_SCHEMES = [
   { name: 'ANZ Default KiwiSaver Scheme', provider: 'ANZ', type: 'Conservative' },
   { name: 'ANZ KiwiSaver Balanced Growth', provider: 'ANZ', type: 'Balanced' },
   { name: 'ANZ KiwiSaver Growth', provider: 'ANZ', type: 'Growth' },
+  { name: 'ANZ KiwiSaver High Growth Fund', provider: 'ANZ', type: 'Aggressive' },
+  { name: 'ASB KiwiSaver Aggressive Fund', provider: 'ASB', type: 'Aggressive' },
   { name: 'ASB KiwiSaver Conservative', provider: 'ASB', type: 'Conservative' },
   { name: 'ASB KiwiSaver Moderate', provider: 'ASB', type: 'Balanced' },
   { name: 'ASB KiwiSaver Growth', provider: 'ASB', type: 'Growth' },
@@ -16,4 +18,5 @@ export const KIWISAVER_SCHEMES = [
   { name: 'Westpac KiwiSaver Conservative', provider: 'Westpac', type: 'Conservative' },
   { name: 'Westpac KiwiSaver Balanced', provider: 'Westpac', type: 'Balanced' },
   { name: 'Westpac KiwiSaver Growth', provider: 'Westpac', type: 'Growth' },
+  { name: 'Westpac KiwiSaver High Growth Fund', provider: 'Westpac', type: 'Aggressive' },
 ];

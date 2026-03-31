@@ -21,6 +21,18 @@ class Settings:
     asb_unit_price_url: str = os.getenv(
         "ASB_UNIT_PRICE_URL", "https://www.asb.co.nz/iFrames/latest_unit_prices.asp"
     )
+    anz_funds_url: str = os.getenv(
+        "ANZ_FUNDS_URL",
+        "https://customer.anz.co.nz/api/historical-unit-prices/funds?reportName=ANZUnitprices",
+    )
+    anz_historical_unit_price_url: str = os.getenv(
+        "ANZ_HISTORICAL_UNIT_PRICE_URL",
+        "https://customer.anz.co.nz/api/historical-unit-prices",
+    )
+    westpac_unit_price_pdf_url: str = os.getenv(
+        "WESTPAC_UNIT_PRICE_PDF_URL",
+        "https://www.westpac.co.nz/assets/Personal/investments/documents/Unit-price-information/Exit-Unit-Prices-Westpac-NZ.pdf",
+    )
     asb_history_backoff_seconds: float = float(
         os.getenv("ASB_HISTORY_BACKOFF_SECONDS", "0.35")
     )

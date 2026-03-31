@@ -105,3 +105,26 @@ def list_schemes(provider: str) -> List[str]:
             cur.execute(sql, (provider,))
             rows = cur.fetchall()
     return [row[0] for row in rows]
+
+
+def fetch_latest_price(provider: str, scheme: str) -> Optional[Dict]:
+    sql = """
+        SELECT scheme, unit_price, price_date
+        FROM kiwisaver_unit_prices
+        WHERE provider = %s AND scheme = %s
+        ORDER BY price_date DESC
+        LIMIT 1
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (provider, scheme))
+            row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "scheme": row[0],
+        "unit_price": float(row[1]),
+        "date": row[2],
+    }

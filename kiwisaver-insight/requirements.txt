@@ -2,6 +2,7 @@ beautifulsoup4==4.12.3
 fastapi==0.115.5
 matplotlib==3.9.2
 psycopg2-binary==2.9.11
+pypdf==6.9.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 requests==2.32.3
