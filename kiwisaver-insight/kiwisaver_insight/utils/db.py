@@ -128,3 +128,25 @@ def fetch_latest_price(provider: str, scheme: str) -> Optional[Dict]:
         "unit_price": float(row[1]),
         "date": row[2],
     }
+
+
+def fetch_latest_price_date(provider: str, scheme: Optional[str] = None) -> Optional[date]:
+    query = [
+        "SELECT MAX(price_date)",
+        "FROM kiwisaver_unit_prices",
+        "WHERE provider = %s",
+    ]
+    params: List = [provider]
+
+    if scheme:
+        query.append("AND scheme = %s")
+        params.append(scheme)
+
+    sql = " ".join(query)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+
+    latest_date = row[0] if row else None
+    return latest_date if latest_date is not None else None

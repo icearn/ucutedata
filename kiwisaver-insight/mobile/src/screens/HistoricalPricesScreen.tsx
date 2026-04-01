@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
@@ -48,8 +48,6 @@ const PERIOD_DAYS: Record<Period, number> = {
   ALL: 365 * 10,
 };
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
 
 const subtractDays = (value: string, days: number) => {
@@ -67,6 +65,7 @@ const formatLabel = (isoDate: string, period: Period) => {
 };
 
 export const HistoricalPricesScreen = () => {
+  const { width } = useWindowDimensions();
   const [period, setPeriod] = useState<Period>('3M');
   const [currentData, setCurrentData] = useState<CurrentPricesResponse | null>(null);
   const [selectedScheme, setSelectedScheme] = useState<string | null>(null);
@@ -80,6 +79,13 @@ export const HistoricalPricesScreen = () => {
     () => currentData?.funds.find((fund) => fund.scheme === selectedScheme) ?? null,
     [currentData, selectedScheme]
   );
+
+  const requestedStartDate = useMemo(() => {
+    if (!currentData) {
+      return null;
+    }
+    return subtractDays(currentData.latest_price_date, PERIOD_DAYS[period] - 1);
+  }, [currentData, period]);
 
   const loadCurrentPrices = async (showRefreshState: boolean = false) => {
     if (showRefreshState) {
@@ -106,6 +112,8 @@ export const HistoricalPricesScreen = () => {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
     const loadTrend = async () => {
       if (!currentData || !selectedScheme) {
         return;
@@ -117,17 +125,29 @@ export const HistoricalPricesScreen = () => {
         const startDate = subtractDays(endDate, PERIOD_DAYS[period] - 1);
         const response = await getTrends(startDate, endDate, [selectedScheme], false);
         const points = response.series?.[0]?.points ?? [];
+        if (!active) {
+          return;
+        }
         setTrendPoints(points);
         setError(null);
       } catch (err) {
+        if (!active) {
+          return;
+        }
         setTrendPoints([]);
         setError('Unable to load the selected fund history.');
       } finally {
-        setLoadingTrend(false);
+        if (active) {
+          setLoadingTrend(false);
+        }
       }
     };
 
     loadTrend();
+
+    return () => {
+      active = false;
+    };
   }, [currentData, selectedScheme, period]);
 
   const chartData = useMemo(() => {
@@ -149,6 +169,27 @@ export const HistoricalPricesScreen = () => {
       ],
     };
   }, [trendPoints, period]);
+
+  const chartSummary = useMemo(() => {
+    if (!trendPoints.length) {
+      return null;
+    }
+
+    const firstPoint = trendPoints[0];
+    const lastPoint = trendPoints[trendPoints.length - 1];
+    return {
+      actualStart: firstPoint.date,
+      actualEnd: lastPoint.date,
+      pointCount: trendPoints.length,
+    };
+  }, [trendPoints]);
+
+  const chartWidth = Math.min(width - 64, 960);
+  const chartKey = useMemo(() => {
+    const firstDate = trendPoints[0]?.date ?? 'none';
+    const lastDate = trendPoints[trendPoints.length - 1]?.date ?? 'none';
+    return `${selectedScheme ?? 'none'}-${period}-${firstDate}-${lastDate}-${trendPoints.length}`;
+  }, [period, selectedScheme, trendPoints]);
 
   return (
     <ScreenContainer>
@@ -224,13 +265,26 @@ export const HistoricalPricesScreen = () => {
 
         <Card>
           <View style={styles.chartHeader}>
-            <Text style={styles.sectionTitle}>Selected Fund Trend</Text>
+            <View style={styles.chartHeaderText}>
+              <Text style={styles.sectionTitle}>Selected Fund Trend</Text>
+              {requestedStartDate ? (
+                <Text style={styles.chartSubtext}>
+                  Requested window: {requestedStartDate} to {currentData?.latest_price_date}
+                </Text>
+              ) : null}
+              {chartSummary ? (
+                <Text style={styles.chartSubtext}>
+                  Loaded range: {chartSummary.actualStart} to {chartSummary.actualEnd} ({chartSummary.pointCount} points)
+                </Text>
+              ) : null}
+            </View>
             {loadingTrend ? <ActivityIndicator size="small" color={theme.colors.primary} /> : null}
           </View>
           {chartData ? (
             <LineChart
+              key={chartKey}
               data={chartData}
-              width={SCREEN_WIDTH - 64}
+              width={chartWidth}
               height={220}
               withDots={false}
               withInnerLines={false}
@@ -385,8 +439,16 @@ const styles = StyleSheet.create({
   chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
+    gap: 12,
+  },
+  chartHeaderText: {
+    flex: 1,
+  },
+  chartSubtext: {
+    ...theme.typography.caption,
+    marginTop: 2,
   },
   chart: {
     marginVertical: 8,

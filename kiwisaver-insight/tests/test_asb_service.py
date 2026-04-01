@@ -80,3 +80,36 @@ def test_current_price_changes_compares_latest_distinct_snapshots(monkeypatch):
             "percent_change": -0.051,
         },
     ]
+
+
+def test_ensure_history_backfills_missing_older_window(monkeypatch):
+    fetched_ranges = []
+
+    def fake_fetch_prices(provider, scheme=None, start_date=None, end_date=None):
+        if not fetched_ranges:
+            return [
+                {"scheme": "Aggressive Fund", "unit_price": 1.10, "date": date(2026, 3, 1)},
+                {"scheme": "Aggressive Fund", "unit_price": 1.12, "date": date(2026, 3, 15)},
+                {"scheme": "Aggressive Fund", "unit_price": 1.14, "date": date(2026, 3, 30)},
+            ]
+
+        return [
+            {"scheme": "Aggressive Fund", "unit_price": 1.0, "date": date(2026, 1, 2)},
+            {"scheme": "Aggressive Fund", "unit_price": 1.05, "date": date(2026, 2, 1)},
+            {"scheme": "Aggressive Fund", "unit_price": 1.10, "date": date(2026, 3, 1)},
+            {"scheme": "Aggressive Fund", "unit_price": 1.12, "date": date(2026, 3, 15)},
+            {"scheme": "Aggressive Fund", "unit_price": 1.14, "date": date(2026, 3, 30)},
+        ]
+
+    def fake_fetch_history(start, end, store=False):
+        fetched_ranges.append((start, end, store))
+        return []
+
+    monkeypatch.setattr(asb_service, "fetch_prices", fake_fetch_prices)
+    monkeypatch.setattr(asb_service, "fetch_history", fake_fetch_history)
+
+    rows = asb_service.ensure_history(date(2026, 1, 1), date(2026, 3, 30))
+
+    assert fetched_ranges == [(date(2026, 1, 1), date(2026, 2, 28), True)]
+    assert rows[0]["date"] == date(2026, 1, 2)
+    assert rows[-1]["date"] == date(2026, 3, 30)

@@ -45,7 +45,7 @@ class ANZCrawler(BaseCrawler):
         payload = response.json()
 
         rows: List[Dict] = []
-        for item in payload.get("data", []):
+        for item in payload.get("data") or []:
             if item.get("columnHeading") != self.scheme_heading:
                 continue
             price_date_text = item.get("fundExitValueDate")
@@ -70,10 +70,10 @@ class ANZCrawler(BaseCrawler):
             response.raise_for_status()
             payload = response.json()
             self._fund_codes = {}
-            for group in payload.get("data", []):
+            for group in payload.get("data") or []:
                 if group.get("heading") != self.scheme_heading:
                     continue
-                for option in group.get("fundOptionsList", []):
+                for option in group.get("fundOptionsList") or []:
                     self._fund_codes[option["fundName"]] = option["fundCode"]
 
         fund_code = self._fund_codes.get(fund_name) if self._fund_codes else None

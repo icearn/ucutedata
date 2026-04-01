@@ -91,14 +91,20 @@ def fetch_history(start: date, end: date, store: bool = False) -> List[Dict]:
 
 
 def ensure_history(start: date, end: date, min_points: int = 2):
-    """Ensure we have at least `min_points` data rows in the DB for the interval."""
+    """Ensure the requested interval is covered in the DB before charting or analysis."""
 
     existing = fetch_prices(crawler.provider, start_date=start, end_date=end)
-    if len(existing) >= min_points:
+    if _covers_interval(existing, start, end, min_points=min_points):
         return existing
 
-    missing_data = fetch_history(start, end, store=True)
-    return fetch_prices(crawler.provider, start_date=start, end_date=end) if missing_data else existing
+    for missing_start, missing_end in _missing_intervals(existing, start, end):
+        fetch_history(missing_start, missing_end, store=True)
+
+    if len(existing) < min_points:
+        fetch_history(start, end, store=True)
+
+    refreshed = fetch_prices(crawler.provider, start_date=start, end_date=end)
+    return refreshed if refreshed else existing
 
 
 def trend_series(
@@ -131,6 +137,31 @@ def trend_series(
             )
         )
     return series
+
+
+def _covers_interval(rows: Sequence[Dict], start: date, end: date, min_points: int = 2) -> bool:
+    if len(rows) < min_points:
+        return False
+
+    first_date = rows[0]["date"]
+    last_date = rows[-1]["date"]
+    return first_date <= start and last_date >= end
+
+
+def _missing_intervals(rows: Sequence[Dict], start: date, end: date) -> List[tuple[date, date]]:
+    if not rows:
+        return [(start, end)]
+
+    missing: List[tuple[date, date]] = []
+    first_date = rows[0]["date"]
+    last_date = rows[-1]["date"]
+
+    if first_date > start:
+        missing.append((start, first_date - timedelta(days=1)))
+    if last_date < end:
+        missing.append((last_date + timedelta(days=1), end))
+
+    return [interval for interval in missing if interval[0] <= interval[1]]
 
 
 def generate_trend_chart(series: List[TrendSeries], metric: str = "unit_price") -> str:

@@ -86,6 +86,19 @@ POST /api/asb/returns
 - **Inside Docker**: run the container with `command: ["python", "-m", "kiwisaver_insight.main", "--store", "--days", "1"]` for batch jobs.
 - **API mode (default CMD)** keeps the service online for agent workflows (e.g., n8n HTTP Request nodes).
 
+### Docker Cron Crawler
+- The `crawler` service now runs a cron scheduler inside the container instead of a one-shot batch command.
+- On container startup it runs one immediate incremental crawl, then keeps cron in the foreground.
+- Each run first checks the latest stored record in Postgres and resumes from `latest_db_date + 1 day`.
+- Current coverage:
+  - `ASB`: all ASB KiwiSaver schemes
+  - `ANZ`: `High Growth Fund`
+  - `Westpac`: `High Growth Fund`
+- Default schedule: `15 18 * * 1-5` in `Pacific/Auckland`
+- Override with env vars in `.env` or compose:
+  - `CRON_SCHEDULE`
+  - `TZ`
+
 ## Development
 
 ### Running Tests

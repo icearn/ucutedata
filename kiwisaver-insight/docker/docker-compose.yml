@@ -67,18 +67,20 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: kiwisaver_crawler
-    profiles: ["batch"]
+    restart: unless-stopped
     env_file:
       - ../.env
     environment:
       DB_HOST: db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TZ: "${TZ:-Pacific/Auckland}"
+      CRON_SCHEDULE: "${CRON_SCHEDULE:-15 18 * * 1-5}"
     depends_on:
       db:
         condition: service_healthy
       kafka:
         condition: service_started
-    command: ["python", "-m", "kiwisaver_insight.main", "--days", "30", "--store"]
+    command: ["/bin/sh", "/app/docker/start-crawler-cron.sh"]
 
   pgadmin:
     image: dpage/pgadmin4
