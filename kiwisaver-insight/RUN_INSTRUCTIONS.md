@@ -7,26 +7,23 @@ This guide will help you start both the Backend API and the Mobile Application t
 -   **Node.js 18+** installed.
 -   **PostgreSQL** (Optional for this demo, as we are using mock data for the analysis features, but required for the full app).
 
-## 2. Start the Backend API
+## 2. Start the Backend Stack
 
-The backend handles the simulation logic and serves the API endpoints.
+The backend stack handles ingestion, APIs, alert evaluation, Kafka, and the shared message hub consumer.
 
 1.  Open a terminal.
 2.  Navigate to the project root:
     ```bash
     cd c:\Users\hans\code\ucutedata\kiwisaver-insight
     ```
-3.  (Optional) Activate your virtual environment if you have one.
-4.  Install dependencies (if not already done):
+3.  Start the Docker stack:
     ```bash
-    pip install -r requirements.txt
+    docker compose -f docker/docker-compose.yml up -d --build
     ```
-5.  Start the server:
-    ```bash
-    python -m uvicorn kiwisaver_insight.api:app --reload --host 0.0.0.0 --port 8000
-    ```
-    *   You should see output indicating the server is running at `http://0.0.0.0:8000`.
-    *   You can verify it's working by visiting the docs: [http://localhost:8000/docs](http://localhost:8000/docs).
+4.  Verify the main endpoints:
+    *   API Swagger: [http://localhost:8001/docs](http://localhost:8001/docs)
+    *   Message Hub: [http://localhost:8010/health](http://localhost:8010/health)
+    *   pgAdmin: [http://localhost:8080](http://localhost:8080)
 
 ## 3. Start the Mobile App (Web Version)
 
@@ -71,5 +68,6 @@ Once both are running:
 
 ## Troubleshooting
 
--   **Backend Connection Error**: If the mobile app says it can't connect, ensure the backend is running on port `8000`.
+-   **Backend Connection Error**: If the mobile app says it can't connect, ensure the backend API is running on port `8001`.
+-   **Message Hub Delivery**: Kafka-backed notifications are consumed by `message-hub` on port `8010`. Real Slack/email/SMS/WhatsApp delivery requires the relevant env vars to be configured.
 -   **Visual Glitches**: If icons are missing, ensure `lucide-react-native` is installed correctly (`npm install`).

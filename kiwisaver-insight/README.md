@@ -9,6 +9,7 @@ Agent-ready toolkit for harvesting ASB KiwiSaver unit prices, persisting them to
 - **Analytics API**: HTTP endpoints for trend charts, return calculations, and portfolio analysis.
 - **Strategy Backtesting**: Simulate investment strategies over historical data (up to 10 years).
 - **Mobile Integration**: Backend support for the React Native mobile app.
+- **Shared Notifications**: Kafka-backed publishing into the sibling `message-hub` service for Slack/email/SMS/IM delivery.
 
 ## Project Layout
 ```
@@ -58,7 +59,7 @@ The project now includes a React Native mobile application in the `mobile/` dire
    - **Android**: `npm run android` (requires Android Studio/Emulator)
    - **iOS**: `npm run ios` (requires Xcode/Simulator, macOS only)
 
-The app connects to the backend at `http://localhost:8000` (iOS/Web) or `http://10.0.2.2:8000` (Android). Ensure the backend is running.
+The app connects to the backend at `http://localhost:8001` (iOS/Web) or `http://10.0.2.2:8001` (Android). Ensure the backend is running.
 
 ### Key Endpoints
 | Method | Path | Description |
@@ -98,11 +99,14 @@ POST /api/asb/returns
   - `ASB`: all ASB KiwiSaver schemes
   - `ANZ`: `Conservative Fund`, `Balanced Growth Fund`, `Growth Fund`, `High Growth Fund`
   - `Westpac`: `Conservative Fund`, `Balanced Fund`, `Growth Fund`, `High Growth Fund`
+- The compose stack also includes `message_hub`, exposed on `http://localhost:8010`, which consumes Kafka notification events from sibling apps.
 - Default schedule: `15 18 * * 1-5` in `Pacific/Auckland`
 - Override with env vars in `.env` or compose:
   - `CRON_SCHEDULE`
   - `TZ`
   - `ALERT_DISPATCH_WEBHOOK_URL`
+  - `MESSAGE_HUB_TOPIC`
+  - `MESSAGE_HUB_DEFAULT_CHANNELS`
 
 ### Alert Monitoring
 - Alert rules are stored in Postgres and evaluated immediately after each scheduled crawl cycle.
@@ -111,7 +115,8 @@ POST /api/asb/returns
   - `metric = percent_change` with `comparison = gte | lte | eq`
 - Percent-change alerts automatically capture the latest stored/live price as the reference baseline when `reference_price` is omitted.
 - Trigger events are written to `kiwisaver_alert_events` even when no outbound webhook is configured.
-- If `ALERT_DISPATCH_WEBHOOK_URL` is set, the scheduler POSTs the alert payload to that shared channel endpoint. Otherwise events remain recorded with dispatch status `pending_channel`.
+- When `KAFKA_BOOTSTRAP_SERVERS` is configured, alert events are published onto `MESSAGE_HUB_TOPIC` for the shared `message-hub` service to fan out into Slack, email, SMS, WhatsApp, or other webhook-backed channels.
+- `ALERT_DISPATCH_WEBHOOK_URL` remains as a fallback transport when Kafka or the shared hub is not being used.
 
 Example payload:
 ```jsonc

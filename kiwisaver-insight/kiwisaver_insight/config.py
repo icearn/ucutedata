@@ -17,6 +17,9 @@ class Settings:
     db_password: str = os.getenv("DB_PASSWORD", "postgres")
     db_host: str = os.getenv("DB_HOST", "localhost")
     db_port: int = int(os.getenv("DB_PORT", "5432"))
+    kafka_bootstrap_servers: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "")
+    message_hub_topic: str = os.getenv("MESSAGE_HUB_TOPIC", "message-hub.notifications.v1")
+    message_hub_source_app: str = os.getenv("MESSAGE_HUB_SOURCE_APP", "kiwisaver-insight")
 
     asb_unit_price_url: str = os.getenv(
         "ASB_UNIT_PRICE_URL", "https://www.asb.co.nz/iFrames/latest_unit_prices.asp"
