@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List
 
 from kiwisaver_insight.config import settings
 from kiwisaver_insight.crawlers.base import BaseCrawler
+from kiwisaver_insight.scheme_catalog import list_tracked_schemes
 from kiwisaver_insight.utils.http_helpers import create_session
 
 
@@ -24,8 +25,12 @@ class ANZCrawler(BaseCrawler):
 
     def fetch_prices(self) -> List[Dict]:
         today = date.today()
-        month_start = today.replace(day=1)
-        return self.fetch_history("High Growth Fund", month_start, today)
+        lookback_start = today - timedelta(days=max(settings.asb_history_default_days, 14))
+        rows: List[Dict] = []
+        for scheme in list_tracked_schemes("ANZ"):
+            rows.extend(self.fetch_history(scheme.scheme, lookback_start, today))
+        rows.sort(key=lambda row: (row["scheme"], row["date"]))
+        return rows
 
     def fetch_history(self, fund_name: str, start_date: date, end_date: date) -> List[Dict]:
         if start_date > end_date:

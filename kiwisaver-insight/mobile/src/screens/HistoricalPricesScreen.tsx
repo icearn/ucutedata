@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { Calendar, TrendingDown, TrendingUp } from 'lucide-react-native';
+import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Input } from '../components/Input';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { theme } from '../constants/theme';
-import { getCurrentPrices, getTrends } from '../services/api';
+import { createAlertRule, getAlertRules, getCurrentPrices, getTrends } from '../services/api';
 
 type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
@@ -38,6 +40,22 @@ type TrendPoint = {
   unit_price: number;
 };
 
+type AlertMetric = 'unit_price' | 'percent_change';
+type AlertComparison = 'gte' | 'lte' | 'eq';
+
+type AlertRule = {
+  id: number;
+  provider: string;
+  scheme: string;
+  metric: AlertMetric;
+  comparison: AlertComparison;
+  target_value: number;
+  reference_price: number | null;
+  is_active: boolean;
+  trigger_once: boolean;
+  triggered_at: string | null;
+};
+
 const PERIOD_DAYS: Record<Period, number> = {
   '1M': 30,
   '3M': 90,
@@ -49,6 +67,7 @@ const PERIOD_DAYS: Record<Period, number> = {
 };
 
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
+const ALERT_USER_ID = 'user_123';
 
 const subtractDays = (value: string, days: number) => {
   const next = new Date(value);
@@ -74,11 +93,43 @@ export const HistoricalPricesScreen = () => {
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [alertMetric, setAlertMetric] = useState<AlertMetric>('unit_price');
+  const [alertComparison, setAlertComparison] = useState<AlertComparison>('gte');
+  const [alertTarget, setAlertTarget] = useState('');
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [savingAlert, setSavingAlert] = useState(false);
+  const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
 
   const selectedFund = useMemo(
     () => currentData?.funds.find((fund) => fund.scheme === selectedScheme) ?? null,
     [currentData, selectedScheme]
   );
+
+  const orderedFunds = useMemo(() => {
+    if (!currentData?.funds.length) {
+      return [];
+    }
+
+    return [...currentData.funds].sort((left, right) => {
+      if (left.scheme === selectedScheme) {
+        return -1;
+      }
+      if (right.scheme === selectedScheme) {
+        return 1;
+      }
+      return right.current_unit_price - left.current_unit_price;
+    });
+  }, [currentData, selectedScheme]);
+
+  const selectedFundAlerts = useMemo(() => {
+    if (!currentData || !selectedFund) {
+      return [];
+    }
+
+    return alertRules.filter(
+      (rule) => rule.provider === currentData.provider && rule.scheme === selectedFund.scheme
+    );
+  }, [alertRules, currentData, selectedFund]);
 
   const requestedStartDate = useMemo(() => {
     if (!currentData) {
@@ -97,7 +148,12 @@ export const HistoricalPricesScreen = () => {
     try {
       const response = await getCurrentPrices(14, true);
       setCurrentData(response);
-      setSelectedScheme((current) => current ?? response.funds[0]?.scheme ?? null);
+      setSelectedScheme((current) => {
+        if (current && response.funds.some((fund) => fund.scheme === current)) {
+          return current;
+        }
+        return response.funds[0]?.scheme ?? null;
+      });
       setError(null);
     } catch (err) {
       setError('Unable to load live KiwiSaver prices right now.');
@@ -107,8 +163,18 @@ export const HistoricalPricesScreen = () => {
     }
   };
 
+  const loadAlertRules = async () => {
+    try {
+      const response = await getAlertRules(ALERT_USER_ID, true);
+      setAlertRules(response.rules ?? []);
+    } catch (err) {
+      setAlertFeedback('Alert rules could not be refreshed right now.');
+    }
+  };
+
   useEffect(() => {
     loadCurrentPrices();
+    loadAlertRules();
   }, []);
 
   useEffect(() => {
@@ -120,6 +186,7 @@ export const HistoricalPricesScreen = () => {
       }
 
       setLoadingTrend(true);
+      setTrendPoints([]);
       try {
         const endDate = currentData.latest_price_date;
         const startDate = subtractDays(endDate, PERIOD_DAYS[period] - 1);
@@ -191,6 +258,55 @@ export const HistoricalPricesScreen = () => {
     return `${selectedScheme ?? 'none'}-${period}-${firstDate}-${lastDate}-${trendPoints.length}`;
   }, [period, selectedScheme, trendPoints]);
 
+  const alertTargetLabel = alertMetric === 'percent_change' ? 'Target Move (%)' : 'Target Unit Price';
+  const alertHint =
+    alertMetric === 'percent_change'
+      ? 'Percent alerts use the current selected fund price as the reference baseline when the alert is created.'
+      : 'Price alerts compare the latest published unit price directly against your target.';
+
+  const formatAlertRule = (rule: AlertRule) => {
+    const symbol = rule.comparison === 'gte' ? '>=' : rule.comparison === 'lte' ? '<=' : '=';
+    const suffix = rule.metric === 'percent_change' ? '%' : '';
+    const reference = rule.reference_price != null ? ` from ${rule.reference_price.toFixed(4)}` : '';
+    return `${symbol} ${rule.target_value.toFixed(4)}${suffix}${reference}`;
+  };
+
+  const submitAlertRule = async () => {
+    if (!currentData || !selectedFund) {
+      setAlertFeedback('Select a fund before creating an alert.');
+      return;
+    }
+
+    const parsedTarget = Number(alertTarget);
+    if (!Number.isFinite(parsedTarget)) {
+      setAlertFeedback('Enter a valid numeric target for the alert.');
+      return;
+    }
+
+    setSavingAlert(true);
+    try {
+      await createAlertRule({
+        user_id: ALERT_USER_ID,
+        provider: currentData.provider,
+        scheme: selectedFund.scheme,
+        metric: alertMetric,
+        comparison: alertComparison,
+        target_value: parsedTarget,
+        channel: 'common_api',
+        trigger_once: true,
+      });
+      await loadAlertRules();
+      setAlertTarget('');
+      setAlertFeedback(
+        `${selectedFund.scheme} alert created: ${alertComparison === 'gte' ? '>=' : alertComparison === 'lte' ? '<=' : '='} ${parsedTarget}`
+      );
+    } catch (err) {
+      setAlertFeedback('Creating the alert failed. Check that the backend alert API is reachable.');
+    } finally {
+      setSavingAlert(false);
+    }
+  };
+
   return (
     <ScreenContainer>
       <ScrollView
@@ -251,6 +367,121 @@ export const HistoricalPricesScreen = () => {
           </Card>
         ) : null}
 
+        {selectedFund ? (
+          <Card style={styles.alertCard}>
+            <Text style={styles.sectionTitle}>Alert Monitor</Text>
+            <Text style={styles.alertSubtext}>
+              Create a one-time alert for {selectedFund.scheme}. The scheduler evaluates active rules after each provider
+              update and records a notification event when the condition is met.
+            </Text>
+
+            <Text style={styles.alertLabel}>Metric</Text>
+            <View style={styles.alertChipRow}>
+              {([
+                { value: 'unit_price', label: 'Unit Price' },
+                { value: 'percent_change', label: '% Move' },
+              ] as { value: AlertMetric; label: string }[]).map((item) => (
+                <TouchableOpacity
+                  key={item.value}
+                  style={[styles.alertChip, alertMetric === item.value && styles.alertChipSelected]}
+                  onPress={() => setAlertMetric(item.value)}
+                >
+                  <Text style={[styles.alertChipText, alertMetric === item.value && styles.alertChipTextSelected]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.alertLabel}>Comparison</Text>
+            <View style={styles.alertChipRow}>
+              {([
+                { value: 'gte', label: '>=' },
+                { value: 'lte', label: '<=' },
+                { value: 'eq', label: '=' },
+              ] as { value: AlertComparison; label: string }[]).map((item) => (
+                <TouchableOpacity
+                  key={item.value}
+                  style={[styles.alertChip, alertComparison === item.value && styles.alertChipSelected]}
+                  onPress={() => setAlertComparison(item.value)}
+                >
+                  <Text
+                    style={[styles.alertChipText, alertComparison === item.value && styles.alertChipTextSelected]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Input
+              label={alertTargetLabel}
+              keyboardType="numeric"
+              value={alertTarget}
+              onChangeText={setAlertTarget}
+              placeholder={alertMetric === 'percent_change' ? 'e.g. 5 for +5%' : 'e.g. 1.2500'}
+            />
+            <Text style={styles.alertSubtext}>{alertHint}</Text>
+
+            <Button title="Create Alert" onPress={submitAlertRule} loading={savingAlert} disabled={!selectedFund} />
+
+            {selectedFundAlerts.length > 0 ? (
+              <View style={styles.activeAlertsSection}>
+                <Text style={styles.alertLabel}>Active Alerts For This Fund</Text>
+                {selectedFundAlerts.map((rule) => (
+                  <View key={rule.id} style={styles.activeAlertRow}>
+                    <Text style={styles.activeAlertText}>{formatAlertRule(rule)}</Text>
+                    <Text style={styles.activeAlertMeta}>
+                      {rule.triggered_at ? 'Triggered' : 'Waiting'} | {rule.metric === 'percent_change' ? '% move' : 'price'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {alertFeedback ? <Text style={styles.alertFeedback}>{alertFeedback}</Text> : null}
+          </Card>
+        ) : null}
+
+        {orderedFunds.length > 0 ? (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Switch Fund</Text>
+            <Text style={styles.sectionCaption}>Choose a fund to update the live price card and trend chart.</Text>
+          </View>
+        ) : null}
+
+        {orderedFunds.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fundSwitchScroll}>
+            {orderedFunds.map((fund) => {
+              const isSelected = fund.scheme === selectedScheme;
+              const positive = fund.unit_change >= 0;
+              return (
+                <TouchableOpacity
+                  key={`switch-${fund.scheme}`}
+                  testID={`fund-switch-${fund.scheme.replace(/\s+/g, '-').toLowerCase()}`}
+                  style={[styles.fundSwitchChip, isSelected && styles.fundSwitchChipSelected]}
+                  onPress={() => setSelectedScheme(fund.scheme)}
+                >
+                  <Text style={[styles.fundSwitchName, isSelected && styles.fundSwitchNameSelected]}>
+                    {fund.scheme}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.fundSwitchChange,
+                      {
+                        color: positive ? theme.colors.success : theme.colors.danger,
+                      },
+                    ]}
+                  >
+                    {positive ? '+' : ''}
+                    {fund.percent_change.toFixed(2)}%
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.periodScroll}>
           {(['1M', '3M', '6M', '1Y', '3Y', '5Y', 'ALL'] as Period[]).map((value) => (
             <TouchableOpacity
@@ -266,7 +497,9 @@ export const HistoricalPricesScreen = () => {
         <Card>
           <View style={styles.chartHeader}>
             <View style={styles.chartHeaderText}>
-              <Text style={styles.sectionTitle}>Selected Fund Trend</Text>
+              <Text style={styles.sectionTitle}>
+                {selectedFund ? `${selectedFund.scheme} Trend` : 'Selected Fund Trend'}
+              </Text>
               {requestedStartDate ? (
                 <Text style={styles.chartSubtext}>
                   Requested window: {requestedStartDate} to {currentData?.latest_price_date}
@@ -308,14 +541,18 @@ export const HistoricalPricesScreen = () => {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Current Fund Moves</Text>
-          <Text style={styles.sectionCaption}>Tap a card to load its chart.</Text>
+          <Text style={styles.sectionCaption}>Tap a chip or card to switch funds.</Text>
         </View>
 
-        {currentData?.funds.map((fund) => {
+        {orderedFunds.map((fund) => {
           const isSelected = fund.scheme === selectedScheme;
           const positive = fund.unit_change >= 0;
           return (
-            <TouchableOpacity key={fund.scheme} onPress={() => setSelectedScheme(fund.scheme)}>
+            <TouchableOpacity
+              key={`card-${fund.scheme}`}
+              testID={`fund-card-${fund.scheme.replace(/\s+/g, '-').toLowerCase()}`}
+              onPress={() => setSelectedScheme(fund.scheme)}
+            >
               <Card style={[styles.fundCard, isSelected && styles.fundCardSelected]}>
                 <View style={styles.fundHeader}>
                   <Text style={styles.fundName}>{fund.scheme}</Text>
@@ -411,6 +648,101 @@ const styles = StyleSheet.create({
   previousText: {
     ...theme.typography.caption,
     marginTop: 6,
+  },
+  alertCard: {
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    backgroundColor: '#FCFDFF',
+  },
+  alertLabel: {
+    ...theme.typography.caption,
+    color: theme.colors.text,
+    fontWeight: '600',
+    marginTop: theme.spacing.s,
+  },
+  alertSubtext: {
+    ...theme.typography.caption,
+    marginTop: 6,
+  },
+  alertChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  alertChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.card,
+  },
+  alertChipSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: '#EFF6FF',
+  },
+  alertChipText: {
+    ...theme.typography.caption,
+    color: theme.colors.text,
+    fontWeight: '600',
+  },
+  alertChipTextSelected: {
+    color: theme.colors.primary,
+  },
+  activeAlertsSection: {
+    marginTop: theme.spacing.s,
+  },
+  activeAlertRow: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: theme.borderRadius.m,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  activeAlertText: {
+    ...theme.typography.body,
+    fontWeight: '600',
+  },
+  activeAlertMeta: {
+    ...theme.typography.caption,
+    marginTop: 4,
+  },
+  alertFeedback: {
+    ...theme.typography.caption,
+    color: theme.colors.primary,
+    marginTop: 8,
+  },
+  fundSwitchScroll: {
+    marginBottom: theme.spacing.m,
+    maxHeight: 72,
+  },
+  fundSwitchChip: {
+    minWidth: 176,
+    marginRight: theme.spacing.s,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 18,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  fundSwitchChipSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: '#EFF6FF',
+  },
+  fundSwitchName: {
+    ...theme.typography.body,
+    fontWeight: '600',
+  },
+  fundSwitchNameSelected: {
+    color: theme.colors.primary,
+  },
+  fundSwitchChange: {
+    ...theme.typography.caption,
+    marginTop: 6,
+    fontWeight: '600',
   },
   periodScroll: {
     marginBottom: theme.spacing.m,

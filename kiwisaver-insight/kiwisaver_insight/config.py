@@ -38,6 +38,8 @@ class Settings:
     )
     asb_history_default_days: int = int(os.getenv("ASB_HISTORY_DEFAULT_DAYS", "30"))
     asb_timeout_seconds: int = int(os.getenv("ASB_TIMEOUT_SECONDS", "30"))
+    alert_dispatch_webhook_url: str | None = os.getenv("ALERT_DISPATCH_WEBHOOK_URL")
+    alert_exact_tolerance: float = float(os.getenv("ALERT_EXACT_TOLERANCE", "0.0001"))
 
     trend_chart_width: int = int(os.getenv("TREND_CHART_WIDTH", "12"))
     trend_chart_height: int = int(os.getenv("TREND_CHART_HEIGHT", "6"))

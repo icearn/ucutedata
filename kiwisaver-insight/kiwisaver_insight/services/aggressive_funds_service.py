@@ -1,28 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Dict, List
 
 from kiwisaver_insight.crawlers.anz import ANZCrawler
 from kiwisaver_insight.crawlers.westpac import WestpacCrawler
+from kiwisaver_insight.scheme_catalog import list_aggressive_tracked_schemes
 from kiwisaver_insight.services.asb_service import fetch_history
 from kiwisaver_insight.utils.db import insert_unit_prices
 
-
-@dataclass(frozen=True)
-class AggressiveSchemeDefinition:
-    provider: str
-    scheme: str
-    display_name: str
-    fund_type: str = "Aggressive"
-
-
-SCHEMES = [
-    AggressiveSchemeDefinition("ASB", "Aggressive Fund", "ASB KiwiSaver Aggressive Fund"),
-    AggressiveSchemeDefinition("ANZ", "High Growth Fund", "ANZ KiwiSaver High Growth Fund"),
-    AggressiveSchemeDefinition("Westpac", "High Growth Fund", "Westpac KiwiSaver High Growth Fund"),
-]
+SCHEMES = list_aggressive_tracked_schemes()
 
 
 def list_aggressive_schemes() -> List[Dict]:
@@ -31,7 +18,7 @@ def list_aggressive_schemes() -> List[Dict]:
             "provider": scheme.provider,
             "scheme": scheme.scheme,
             "display_name": scheme.display_name,
-            "type": scheme.fund_type,
+            "type": scheme.risk_level,
         }
         for scheme in SCHEMES
     ]

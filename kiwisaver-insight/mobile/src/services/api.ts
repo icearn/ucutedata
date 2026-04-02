@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 
-// Use 10.0.2.2 for Android Emulator, localhost for iOS Simulator
-const DEFAULT_BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
+// Docker exposes the backend API on 8001 locally. Keep the env override for other deployments.
+const DEFAULT_BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8001' : 'http://localhost:8001';
 const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_BASE_URL;
 
 const api = axios.create({
@@ -53,6 +53,33 @@ export const getReturns = async (
     start_date: startDate,
     end_date: endDate,
     initial_amount: initialAmount,
+  });
+  return response.data;
+};
+
+export const createAlertRule = async (payload: {
+  user_id: string;
+  provider: string;
+  scheme: string;
+  metric: 'unit_price' | 'percent_change';
+  comparison: 'gte' | 'lte' | 'eq';
+  target_value: number;
+  reference_price?: number;
+  label?: string;
+  channel?: string;
+  channel_target?: string;
+  trigger_once?: boolean;
+}) => {
+  const response = await api.post('/api/alerts/rules', payload);
+  return response.data;
+};
+
+export const getAlertRules = async (userId?: string, activeOnly?: boolean) => {
+  const response = await api.get('/api/alerts/rules', {
+    params: {
+      user_id: userId,
+      active_only: activeOnly,
+    },
   });
   return response.data;
 };

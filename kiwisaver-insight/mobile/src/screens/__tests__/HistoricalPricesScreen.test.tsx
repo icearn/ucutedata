@@ -4,10 +4,14 @@ import { HistoricalPricesScreen } from '../HistoricalPricesScreen';
 
 const mockGetCurrentPrices = jest.fn();
 const mockGetTrends = jest.fn();
+const mockGetAlertRules = jest.fn();
+const mockCreateAlertRule = jest.fn();
 
 jest.mock('../../services/api', () => ({
   getCurrentPrices: (...args: any[]) => mockGetCurrentPrices(...args),
   getTrends: (...args: any[]) => mockGetTrends(...args),
+  getAlertRules: (...args: any[]) => mockGetAlertRules(...args),
+  createAlertRule: (...args: any[]) => mockCreateAlertRule(...args),
 }));
 
 jest.mock('react-native-chart-kit', () => ({
@@ -42,21 +46,49 @@ describe('HistoricalPricesScreen', () => {
           unit_change: -0.0018,
           percent_change: -0.1318,
         },
+        {
+          scheme: 'Growth Fund',
+          current_unit_price: 1.205,
+          previous_unit_price: 1.198,
+          unit_change: 0.007,
+          percent_change: 0.5843,
+        },
       ],
     });
 
-    mockGetTrends.mockImplementation((startDate: string, endDate: string) =>
+    mockGetTrends.mockImplementation((startDate: string, endDate: string, schemes?: string[]) =>
       Promise.resolve({
         series: [
           {
-            points: [
-              { date: startDate, unit_price: 1.1 },
-              { date: endDate, unit_price: 1.2 },
-            ],
+            points:
+              schemes?.[0] === 'Growth Fund'
+                ? [
+                    { date: startDate, unit_price: 1.15 },
+                    { date: subtractDays(endDate, 10), unit_price: 1.18 },
+                    { date: endDate, unit_price: 1.205 },
+                  ]
+                : [
+                    { date: startDate, unit_price: 1.1 },
+                    { date: endDate, unit_price: 1.2 },
+                  ],
           },
         ],
       })
     );
+
+    mockGetAlertRules.mockResolvedValue({ rules: [] });
+    mockCreateAlertRule.mockResolvedValue({
+      id: 1,
+      provider: 'ASB',
+      scheme: 'Aggressive Fund',
+      metric: 'unit_price',
+      comparison: 'gte',
+      target_value: 1.4,
+      reference_price: null,
+      is_active: true,
+      trigger_once: true,
+      triggered_at: null,
+    });
   });
 
   it('reloads the trend range when the selected period changes', async () => {
@@ -101,5 +133,59 @@ describe('HistoricalPricesScreen', () => {
     });
 
     expect(await findByText(`Loaded range: ${sixMonthStart} to 2026-03-30 (2 points)`)).toBeTruthy();
+  });
+
+  it('switches the selected fund and reloads the trend for the new fund', async () => {
+    const { getByTestId, findByText } = render(<HistoricalPricesScreen />);
+
+    const defaultStart = subtractDays('2026-03-30', 89);
+    await waitFor(() => {
+      expect(mockGetTrends).toHaveBeenLastCalledWith(
+        defaultStart,
+        '2026-03-30',
+        ['Aggressive Fund'],
+        false
+      );
+    });
+
+    fireEvent.press(getByTestId('fund-switch-growth-fund'));
+
+    await waitFor(() => {
+      expect(mockGetTrends).toHaveBeenLastCalledWith(
+        defaultStart,
+        '2026-03-30',
+        ['Growth Fund'],
+        false
+      );
+    });
+
+    expect(await findByText('Growth Fund Trend')).toBeTruthy();
+    expect(await findByText(`Loaded range: ${defaultStart} to 2026-03-30 (3 points)`)).toBeTruthy();
+  });
+
+  it('creates an alert for the selected fund', async () => {
+    const { getByText, getByPlaceholderText, findByText } = render(<HistoricalPricesScreen />);
+
+    await waitFor(() => {
+      expect(mockGetAlertRules).toHaveBeenCalledWith('user_123', true);
+    });
+
+    fireEvent.changeText(getByPlaceholderText('e.g. 1.2500'), '1.4');
+    fireEvent.press(getByText('Create Alert'));
+
+    await waitFor(() => {
+      expect(mockCreateAlertRule).toHaveBeenCalledWith({
+        user_id: 'user_123',
+        provider: 'ASB',
+        scheme: 'Aggressive Fund',
+        metric: 'unit_price',
+        comparison: 'gte',
+        target_value: 1.4,
+        channel: 'common_api',
+        trigger_once: true,
+      });
+    });
+
+    expect(await findByText('Aggressive Fund alert created: >= 1.4')).toBeTruthy();
   });
 });

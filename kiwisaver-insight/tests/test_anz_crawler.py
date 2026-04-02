@@ -83,3 +83,24 @@ def test_anz_crawler_fetch_history_handles_empty_data_payload(monkeypatch):
     rows = crawler.fetch_history("High Growth Fund", date(2026, 3, 21), date(2026, 3, 22))
 
     assert rows == []
+
+
+def test_anz_crawler_fetch_prices_collects_supported_scheme_set(monkeypatch):
+    crawler = ANZCrawler()
+
+    monkeypatch.setattr(
+        crawler,
+        "fetch_history",
+        lambda fund_name, start_date, end_date: [
+            {"scheme": fund_name, "unit_price": 1.0, "date": start_date}
+        ],
+    )
+
+    rows = crawler.fetch_prices()
+
+    assert [row["scheme"] for row in rows] == [
+        "Balanced Growth Fund",
+        "Conservative Fund",
+        "Growth Fund",
+        "High Growth Fund",
+    ]

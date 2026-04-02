@@ -3,6 +3,8 @@ from datetime import date, timedelta, datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
+from kiwisaver_insight.scheme_catalog import list_tracked_schemes
+
 class SchemeData(BaseModel):
     id: str
     name: str
@@ -10,28 +12,16 @@ class SchemeData(BaseModel):
     type: str
     color: str
 
-# Mock data for available schemes (matching web app)
+# Supported live schemes (matching the mobile app catalog)
 AVAILABLE_SCHEMES = [
-    SchemeData(id='1', name='ANZ Default KiwiSaver Scheme', provider='ANZ', type='Conservative', color='#2563eb'),
-    SchemeData(id='2', name='ANZ KiwiSaver Balanced Growth', provider='ANZ', type='Balanced', color='#4f46e5'),
-    SchemeData(id='3', name='ANZ KiwiSaver Growth', provider='ANZ', type='Growth', color='#7c3aed'),
-    SchemeData(id='4', name='ANZ KiwiSaver High Growth Fund', provider='ANZ', type='Aggressive', color='#0ea5e9'),
-    SchemeData(id='5', name='ASB KiwiSaver Conservative', provider='ASB', type='Conservative', color='#16a34a'),
-    SchemeData(id='6', name='ASB KiwiSaver Moderate', provider='ASB', type='Balanced', color='#14b8a6'),
-    SchemeData(id='7', name='ASB KiwiSaver Growth', provider='ASB', type='Growth', color='#f59e0b'),
-    SchemeData(id='8', name='ASB KiwiSaver Aggressive Fund', provider='ASB', type='Aggressive', color='#f97316'),
-    SchemeData(id='9', name='BNZ KiwiSaver Conservative', provider='BNZ', type='Conservative', color='#0f766e'),
-    SchemeData(id='10', name='BNZ KiwiSaver Balanced', provider='BNZ', type='Balanced', color='#0891b2'),
-    SchemeData(id='11', name='BNZ KiwiSaver Growth', provider='BNZ', type='Growth', color='#0284c7'),
-    SchemeData(id='12', name='Fisher Funds Two Preservation', provider='Fisher Funds', type='Conservative', color='#7c2d12'),
-    SchemeData(id='13', name='Fisher Funds Growth', provider='Fisher Funds', type='Growth', color='#c2410c'),
-    SchemeData(id='14', name='Simplicity KiwiSaver Conservative', provider='Simplicity', type='Conservative', color='#be185d'),
-    SchemeData(id='15', name='Simplicity KiwiSaver Balanced', provider='Simplicity', type='Balanced', color='#db2777'),
-    SchemeData(id='16', name='Simplicity KiwiSaver Growth', provider='Simplicity', type='Growth', color='#ec4899'),
-    SchemeData(id='17', name='Westpac KiwiSaver Conservative', provider='Westpac', type='Conservative', color='#991b1b'),
-    SchemeData(id='18', name='Westpac KiwiSaver Balanced', provider='Westpac', type='Balanced', color='#dc2626'),
-    SchemeData(id='19', name='Westpac KiwiSaver Growth', provider='Westpac', type='Growth', color='#ef4444'),
-    SchemeData(id='20', name='Westpac KiwiSaver High Growth Fund', provider='Westpac', type='Aggressive', color='#b91c1c'),
+    SchemeData(
+        id=scheme.id,
+        name=scheme.display_name,
+        provider=scheme.provider,
+        type=scheme.risk_level,
+        color=scheme.color,
+    )
+    for scheme in list_tracked_schemes()
 ]
 
 def generate_unit_price_history(scheme_id: str, years: int) -> List[Dict[str, Any]]:

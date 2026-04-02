@@ -66,6 +66,10 @@ The app connects to the backend at `http://localhost:8000` (iOS/Web) or `http://
 | POST | `/api/asb/fetch` | Fetches ASB unit prices for a date range; optional `store=true` persists to Postgres. |
 | POST | `/api/asb/trends` | Returns unit-price trend data and a base64 PNG chart for the requested schemes. |
 | POST | `/api/asb/returns` | Calculates portfolio returns for one or more schemes (table + chart). |
+| POST | `/api/alerts/rules` | Creates a price or percent-change alert for a tracked provider scheme. |
+| GET | `/api/alerts/rules` | Lists stored alert rules; supports `user_id` and `active_only`. |
+| GET | `/api/alerts/events` | Lists alert trigger events and dispatch status. |
+| POST | `/api/alerts/evaluate` | Manually evaluates active alerts against the latest stored prices. |
 | POST | `/api/analysis/current-scheme` | **New**: Returns historical data and projected outcomes for selected schemes. |
 | POST | `/api/strategy/backtest` | **New**: Runs a 10-year backtest for a user-defined switching strategy. |
 | GET  | `/health` | Liveness probe. |
@@ -92,12 +96,37 @@ POST /api/asb/returns
 - Each run first checks the latest stored record in Postgres and resumes from `latest_db_date + 1 day`.
 - Current coverage:
   - `ASB`: all ASB KiwiSaver schemes
-  - `ANZ`: `High Growth Fund`
-  - `Westpac`: `High Growth Fund`
+  - `ANZ`: `Conservative Fund`, `Balanced Growth Fund`, `Growth Fund`, `High Growth Fund`
+  - `Westpac`: `Conservative Fund`, `Balanced Fund`, `Growth Fund`, `High Growth Fund`
 - Default schedule: `15 18 * * 1-5` in `Pacific/Auckland`
 - Override with env vars in `.env` or compose:
   - `CRON_SCHEDULE`
   - `TZ`
+  - `ALERT_DISPATCH_WEBHOOK_URL`
+
+### Alert Monitoring
+- Alert rules are stored in Postgres and evaluated immediately after each scheduled crawl cycle.
+- Supported rule shapes:
+  - `metric = unit_price` with `comparison = gte | lte | eq`
+  - `metric = percent_change` with `comparison = gte | lte | eq`
+- Percent-change alerts automatically capture the latest stored/live price as the reference baseline when `reference_price` is omitted.
+- Trigger events are written to `kiwisaver_alert_events` even when no outbound webhook is configured.
+- If `ALERT_DISPATCH_WEBHOOK_URL` is set, the scheduler POSTs the alert payload to that shared channel endpoint. Otherwise events remain recorded with dispatch status `pending_channel`.
+
+Example payload:
+```jsonc
+POST /api/alerts/rules
+{
+  "user_id": "user_123",
+  "provider": "ASB",
+  "scheme": "Growth Fund",
+  "metric": "percent_change",
+  "comparison": "lte",
+  "target_value": -5,
+  "channel": "common_api",
+  "trigger_once": true
+}
+```
 
 ## Development
 

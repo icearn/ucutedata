@@ -14,6 +14,20 @@ import { Search, ChevronDown, Check, DollarSign, TrendingUp, Calendar } from 'lu
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 
+const LEGACY_SCHEME_NAME_ALIASES: Record<string, string> = {
+  'ANZ Default KiwiSaver Scheme': 'ANZ KiwiSaver Conservative Fund',
+  'ANZ KiwiSaver Balanced Growth': 'ANZ KiwiSaver Balanced Growth Fund',
+  'ANZ KiwiSaver Growth': 'ANZ KiwiSaver Growth Fund',
+  'ASB KiwiSaver Conservative': 'ASB KiwiSaver Conservative Fund',
+  'ASB KiwiSaver Moderate': 'ASB KiwiSaver Moderate Fund',
+  'ASB KiwiSaver Growth': 'ASB KiwiSaver Growth Fund',
+  'Westpac KiwiSaver Conservative': 'Westpac KiwiSaver Conservative Fund',
+  'Westpac KiwiSaver Balanced': 'Westpac KiwiSaver Balanced Fund',
+  'Westpac KiwiSaver Growth': 'Westpac KiwiSaver Growth Fund',
+};
+
+const normalizeSchemeName = (name: string) => LEGACY_SCHEME_NAME_ALIASES[name] || name;
+
 export const SettingsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [settings, setSettings] = useState<UserSettings>({
@@ -21,7 +35,7 @@ export const SettingsScreen = () => {
     personalContribution: 200,
     companyContribution: 60,
     years: 30,
-    selectedScheme: 'ANZ Default KiwiSaver Scheme',
+    selectedScheme: KIWISAVER_SCHEMES[0]?.name ?? 'ANZ KiwiSaver Conservative Fund',
   });
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,7 +48,11 @@ export const SettingsScreen = () => {
     try {
       const savedSettings = await AsyncStorage.getItem('userSettings');
       if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+        const parsedSettings = JSON.parse(savedSettings);
+        setSettings({
+          ...parsedSettings,
+          selectedScheme: normalizeSchemeName(parsedSettings.selectedScheme),
+        });
       }
     } catch (e) {
       console.error('Failed to load settings', e);
@@ -76,7 +94,7 @@ export const SettingsScreen = () => {
     >
       <View>
         <Text style={styles.schemeName}>{item.name}</Text>
-        <Text style={styles.schemeDetails}>{item.provider} • {item.type}</Text>
+        <Text style={styles.schemeDetails}>{item.provider} 鈥?{item.type}</Text>
       </View>
       {settings.selectedScheme === item.name && (
         <Check size={20} color={theme.colors.primary} />

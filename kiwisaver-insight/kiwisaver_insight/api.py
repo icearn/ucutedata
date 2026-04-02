@@ -7,6 +7,14 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
+from kiwisaver_insight.scheme_catalog import list_tracked_scheme_payloads
+from kiwisaver_insight.services.alert_monitor_service import (
+    create_alert_rule,
+    disable_alert_rule,
+    evaluate_active_alerts,
+    list_alert_events,
+    list_alert_rules,
+)
 from kiwisaver_insight.services.asb_service import (
     calculate_returns,
     current_price_changes,
@@ -20,7 +28,7 @@ from kiwisaver_insight.services.aggressive_funds_service import (
     list_aggressive_schemes,
 )
 from kiwisaver_insight.services.verification_service import verify_live_sources_against_db
-from kiwisaver_insight.utils.db import insert_unit_prices, list_schemes
+from kiwisaver_insight.utils.db import ensure_runtime_schema, insert_unit_prices, list_schemes
 
 API_DESCRIPTION = """
 Operational API for KiwiSaver unit-price ingestion, storage, analytics, and verification.
@@ -44,6 +52,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_event_handler("startup", ensure_runtime_schema)
 
 
 class FetchRequest(BaseModel):
@@ -83,6 +93,23 @@ class AggressiveCollectRequest(BaseModel):
     store: bool = Field(True, description="Persist fetched prices to Postgres")
 
 
+class AlertRuleCreateRequest(BaseModel):
+    user_id: str = Field(..., description="Application user or tenant identifier")
+    provider: str = Field(..., description="Tracked KiwiSaver provider")
+    scheme: str = Field(..., description="Tracked fund name within the provider")
+    metric: str = Field(..., description="`unit_price` or `percent_change`")
+    comparison: str = Field(..., description="`gte`, `lte`, or `eq`")
+    target_value: float = Field(..., description="Target price or target percent move")
+    reference_price: Optional[float] = Field(
+        None,
+        description="Optional baseline price for percent-change alerts. Defaults to latest live/stored price.",
+    )
+    label: Optional[str] = Field(None, description="Optional friendly label for the rule")
+    channel: str = Field("common_api", description="Logical outbound channel identifier")
+    channel_target: Optional[str] = Field(None, description="Optional target on the outbound channel")
+    trigger_once: bool = Field(True, description="When true, notify once then mark the rule as triggered")
+
+
 @app.get("/", include_in_schema=False)
 def api_index():
     return RedirectResponse(url="/docs")
@@ -98,9 +125,52 @@ def api_schemes():
     return {"provider": "ASB", "schemes": list_schemes("ASB")}
 
 
+@app.get("/api/schemes/tracked")
+def api_tracked_schemes():
+    return {"schemes": list_tracked_scheme_payloads()}
+
+
 @app.get("/api/aggressive-funds/schemes")
 def api_aggressive_schemes():
     return {"schemes": list_aggressive_schemes()}
+
+
+@app.post("/api/alerts/rules")
+def api_create_alert_rule(req: AlertRuleCreateRequest):
+    try:
+        return create_alert_rule(req.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/alerts/rules")
+def api_list_alert_rules(
+    user_id: Optional[str] = Query(None),
+    active_only: Optional[bool] = Query(None),
+):
+    return {"rules": list_alert_rules(user_id=user_id, active_only=active_only)}
+
+
+@app.post("/api/alerts/rules/{rule_id}/disable")
+def api_disable_alert_rule(rule_id: int):
+    try:
+        return disable_alert_rule(rule_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/alerts/events")
+def api_list_alert_events(
+    user_id: Optional[str] = Query(None),
+    rule_id: Optional[int] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+):
+    return {"events": list_alert_events(user_id=user_id, rule_id=rule_id, limit=limit)}
+
+
+@app.post("/api/alerts/evaluate")
+def api_evaluate_alerts():
+    return evaluate_active_alerts()
 
 
 @app.post("/api/asb/fetch")

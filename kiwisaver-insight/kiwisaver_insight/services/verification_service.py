@@ -6,6 +6,7 @@ from typing import Dict, List
 from kiwisaver_insight.config import settings
 from kiwisaver_insight.crawlers.anz import ANZCrawler
 from kiwisaver_insight.crawlers.westpac import WestpacCrawler
+from kiwisaver_insight.scheme_catalog import list_tracked_schemes
 from kiwisaver_insight.services.asb_service import current_price_changes
 from kiwisaver_insight.utils.db import fetch_latest_price
 
@@ -20,38 +21,48 @@ def verify_live_sources_against_db() -> Dict:
     checks: List[Dict] = []
 
     asb_live = current_price_changes(lookback_days=14, store=False)
-    for fund in asb_live["funds"]:
+    asb_funds = {fund["scheme"]: fund for fund in asb_live["funds"]}
+    for scheme in list_tracked_schemes("ASB"):
+        fund = asb_funds.get(scheme.scheme)
+        if not fund:
+            continue
         checks.append(
             _build_check(
-                provider="ASB",
-                scheme=fund["scheme"],
-                display_name=f"ASB KiwiSaver {fund['scheme']}",
+                provider=scheme.provider,
+                scheme=scheme.scheme,
+                display_name=scheme.display_name,
                 source_price_date=asb_live["latest_price_date"],
                 source_unit_price=fund["current_unit_price"],
             )
         )
 
-    anz_latest = _latest_row(ANZCrawler().fetch_prices(), scheme="High Growth Fund")
-    if anz_latest:
+    anz_latest_rows = _latest_rows_by_scheme(ANZCrawler().fetch_prices())
+    for scheme in list_tracked_schemes("ANZ"):
+        latest = anz_latest_rows.get(scheme.scheme)
+        if not latest:
+            continue
         checks.append(
             _build_check(
-                provider="ANZ",
-                scheme="High Growth Fund",
-                display_name="ANZ KiwiSaver High Growth Fund",
-                source_price_date=anz_latest["date"].isoformat(),
-                source_unit_price=float(anz_latest["unit_price"]),
+                provider=scheme.provider,
+                scheme=scheme.scheme,
+                display_name=scheme.display_name,
+                source_price_date=latest["date"].isoformat(),
+                source_unit_price=float(latest["unit_price"]),
             )
         )
 
-    westpac_latest = _latest_row(WestpacCrawler().fetch_prices(), scheme="High Growth Fund")
-    if westpac_latest:
+    westpac_latest_rows = _latest_rows_by_scheme(WestpacCrawler().fetch_prices())
+    for scheme in list_tracked_schemes("Westpac"):
+        latest = westpac_latest_rows.get(scheme.scheme)
+        if not latest:
+            continue
         checks.append(
             _build_check(
-                provider="Westpac",
-                scheme="High Growth Fund",
-                display_name="Westpac KiwiSaver High Growth Fund",
-                source_price_date=westpac_latest["date"].isoformat(),
-                source_unit_price=float(westpac_latest["unit_price"]),
+                provider=scheme.provider,
+                scheme=scheme.scheme,
+                display_name=scheme.display_name,
+                source_price_date=latest["date"].isoformat(),
+                source_unit_price=float(latest["unit_price"]),
             )
         )
 
@@ -77,6 +88,16 @@ def _latest_row(rows: List[Dict], scheme: str) -> Dict | None:
     if not filtered:
         return None
     return max(filtered, key=lambda row: _parse_date(row["date"]))
+
+
+def _latest_rows_by_scheme(rows: List[Dict]) -> Dict[str, Dict]:
+    latest: Dict[str, Dict] = {}
+    for row in rows:
+        scheme = row["scheme"]
+        existing = latest.get(scheme)
+        if existing is None or _parse_date(row["date"]) > _parse_date(existing["date"]):
+            latest[scheme] = row
+    return latest
 
 
 def _parse_date(value: str | date) -> date:
