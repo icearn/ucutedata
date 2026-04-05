@@ -18,8 +18,17 @@ export const getSchemes = async () => {
 };
 
 export const getCurrentPrices = async (lookbackDays: number = 14, store: boolean = true) => {
-  const response = await api.get('/api/asb/current-prices', {
+  return getProviderCurrentPrices('ASB', lookbackDays, store);
+};
+
+export const getProviderCurrentPrices = async (
+  provider: string,
+  lookbackDays: number = 14,
+  store: boolean = true
+) => {
+  const response = await api.get('/api/unit-prices/current', {
     params: {
+      provider,
       lookback_days: lookbackDays,
       store,
     },
@@ -33,7 +42,18 @@ export const getTrends = async (
   schemes?: string[],
   includeChart: boolean = true
 ) => {
-  const response = await api.post('/api/asb/trends', {
+  return getProviderTrends('ASB', startDate, endDate, schemes, includeChart);
+};
+
+export const getProviderTrends = async (
+  provider: string,
+  startDate: string,
+  endDate: string,
+  schemes?: string[],
+  includeChart: boolean = true
+) => {
+  const response = await api.post('/api/unit-prices/trends', {
+    provider,
     start_date: startDate,
     end_date: endDate,
     schemes,

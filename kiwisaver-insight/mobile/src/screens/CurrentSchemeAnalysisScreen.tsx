@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, useWindowDimensions, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
@@ -12,7 +12,7 @@ import { ANALYSIS_SCHEMES, SCHEME_PROVIDERS, SCHEME_RISK_LEVELS } from '../const
 
 const ALL_PROVIDERS = 'All Providers';
 const ALL_RISK_LEVELS = 'All Risk Levels';
-const MAX_SELECTED_SCHEMES = 4;
+const MAX_SELECTED_SCHEMES = 5;
 
 type SchemeGroup = {
   key: string;
@@ -108,6 +108,8 @@ const formatMonthKeyLabel = (monthKey: string) => {
   return `${month}/${year.slice(-2)}`;
 };
 
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
 type HistoricalSeries = {
   key: string;
   label: string;
@@ -129,6 +131,7 @@ const AnalysisHistoryChart = ({
   monthKeys: string[];
   showPercentage: boolean;
 }) => {
+  const [hoveredMonthKey, setHoveredMonthKey] = useState<string | null>(null);
   const chartHeight = 260;
   const paddingLeft = 52;
   const paddingRight = 16;
@@ -173,9 +176,35 @@ const AnalysisHistoryChart = ({
 
   const labelInterval = Math.max(1, Math.ceil(monthKeys.length / 6));
   const xLabels = monthKeys.filter((_, index) => index % labelInterval === 0 || index === monthKeys.length - 1);
+  const hoveredKey = hoveredMonthKey && monthIndex.has(hoveredMonthKey) ? hoveredMonthKey : null;
+  const hoveredX = hoveredKey ? xForMonth(hoveredKey) : null;
+  const tooltipWidth = 220;
+  const tooltipRows = hoveredKey
+    ? series
+        .map((item) => {
+          const point = item.points.find((entry) => entry.monthKey === hoveredKey);
+          if (!point) {
+            return null;
+          }
+          const baseline = item.points[0]?.value ?? point.value;
+          const percentChange = baseline ? ((point.value - baseline) / baseline) * 100 : 0;
+          return {
+            key: item.key,
+            label: item.label,
+            color: item.color,
+            valueText: `$${point.value.toFixed(4)}`,
+            changeText: `${percentChange >= 0 ? '+' : ''}${percentChange.toFixed(2)}%`,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+  const tooltipLeft =
+    hoveredX == null
+      ? paddingLeft
+      : clamp(hoveredX - tooltipWidth / 2, paddingLeft, width - paddingRight - tooltipWidth);
 
   return (
-    <View>
+    <View style={[styles.chartFrame, { width, height: chartHeight }]}>
       <Svg width={width} height={chartHeight}>
         {yTicks.map((tick) => (
           <React.Fragment key={`y-${tick.y}`}>
@@ -208,6 +237,18 @@ const AnalysisHistoryChart = ({
           strokeWidth="1"
         />
 
+        {hoveredX != null ? (
+          <Line
+            x1={hoveredX}
+            y1={paddingTop}
+            x2={hoveredX}
+            y2={paddingTop + plotHeight}
+            stroke="#94a3b8"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+          />
+        ) : null}
+
         {xLabels.map((monthKey) => (
           <SvgText
             key={`x-${monthKey}`}
@@ -238,6 +279,23 @@ const AnalysisHistoryChart = ({
                   strokeLinecap="round"
                 />
               ) : null}
+              {hoveredKey ? (
+                item.points
+                  .filter((point) => point.monthKey === hoveredKey)
+                  .map((point) => (
+                    <Circle
+                      key={`${item.key}-${point.monthKey}`}
+                      cx={xForMonth(point.monthKey)}
+                      cy={yForValue(
+                        showPercentage && item.points[0]?.value
+                          ? ((point.value - item.points[0].value) / item.points[0].value) * 100
+                          : point.value
+                      )}
+                      r="4"
+                      fill={item.color}
+                    />
+                  ))
+              ) : null}
               {item.points.length === 1 ? (
                 <Circle
                   cx={xForMonth(item.points[0].monthKey)}
@@ -250,6 +308,51 @@ const AnalysisHistoryChart = ({
           );
         })}
       </Svg>
+
+      <View style={styles.chartHitArea} pointerEvents="box-none">
+        {monthKeys.map((monthKey, index) => {
+          const x = xForMonth(monthKey);
+          const left = index === 0 ? paddingLeft : x - xStep / 2;
+          const right = index === monthKeys.length - 1 ? width - paddingRight : x + xStep / 2;
+          return (
+            <Pressable
+              key={`hit-${monthKey}`}
+              testID={`analysis-chart-hit-${monthKey}`}
+              style={[
+                styles.chartHitBox,
+                {
+                  left,
+                  top: paddingTop,
+                  width: Math.max(right - left, 8),
+                  height: plotHeight,
+                },
+              ]}
+              onHoverIn={() => setHoveredMonthKey(monthKey)}
+              onHoverOut={() => setHoveredMonthKey((current) => (current === monthKey ? null : current))}
+              onPressIn={() => setHoveredMonthKey(monthKey)}
+              onPressOut={() => setHoveredMonthKey((current) => (current === monthKey ? null : current))}
+            />
+          );
+        })}
+      </View>
+
+      {hoveredKey && tooltipRows.length > 0 ? (
+        <View style={[styles.chartTooltip, { left: tooltipLeft, top: paddingTop + 8 }]}>
+          <Text style={styles.chartTooltipTitle}>{hoveredKey}</Text>
+          {tooltipRows.map((row) => (
+            <View key={row.key} style={styles.chartTooltipRow}>
+              <View style={[styles.chartTooltipDot, { backgroundColor: row.color }]} />
+              <View style={styles.chartTooltipTextBlock}>
+                <Text style={styles.chartTooltipLabel}>{row.label}</Text>
+                <Text style={styles.chartTooltipValue}>
+                  {row.valueText}
+                  {showPercentage ? ` | ${row.changeText}` : ''}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.chartLegendWrap}>
         {series.map((item) => (
@@ -497,16 +600,16 @@ export const CurrentSchemeAnalysisScreen = () => {
         </View>
 
         <View style={styles.section}>
-          <View style={styles.sectionHeadingRow}>
-            <Text style={styles.sectionTitle}>Select Schemes</Text>
-            <View style={styles.selectionBadge}>
-              <Text style={styles.selectionBadgeText}>
-                {selectedSchemes.length}/{MAX_SELECTED_SCHEMES} selected
+        <View style={styles.sectionHeadingRow}>
+          <Text style={styles.sectionTitle}>Select Schemes</Text>
+          <View style={styles.selectionBadge}>
+            <Text style={styles.selectionBadgeText}>
+              {selectedSchemes.length}/{MAX_SELECTED_SCHEMES} selected
               </Text>
             </View>
           </View>
           <Text style={styles.sectionHint}>
-            Filter the catalog first, then choose up to four schemes for the chart and outcome comparison.
+            Filter the catalog first, then choose up to five schemes for the chart and outcome comparison.
           </Text>
 
           <Text style={styles.filterLabel}>Quick Compare</Text>
@@ -1044,6 +1147,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  chartFrame: {
+    position: 'relative',
+  },
   loadingState: {
     marginVertical: 20,
   },
@@ -1082,6 +1188,55 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: '#475569',
+  },
+  chartHitArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  chartHitBox: {
+    position: 'absolute',
+  },
+  chartTooltip: {
+    position: 'absolute',
+    width: 220,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  chartTooltipTitle: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  chartTooltipRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 4,
+  },
+  chartTooltipDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    marginTop: 4,
+  },
+  chartTooltipTextBlock: {
+    flex: 1,
+  },
+  chartTooltipLabel: {
+    color: '#f8fafc',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  chartTooltipValue: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    marginTop: 2,
   },
   toggleContainer: {
     flexDirection: 'row',

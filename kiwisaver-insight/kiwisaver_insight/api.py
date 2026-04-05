@@ -22,6 +22,11 @@ from kiwisaver_insight.services.asb_service import (
     generate_trend_chart,
     trend_series,
 )
+from kiwisaver_insight.services.historical_prices_service import (
+    current_price_changes_for_provider,
+    generate_provider_trend_chart,
+    trend_series_for_provider,
+)
 from kiwisaver_insight.services.aggressive_funds_service import (
     collect_aggressive_unit_prices,
     current_aggressive_prices,
@@ -67,6 +72,14 @@ class FetchRequest(BaseModel):
 
 
 class TrendRequest(BaseModel):
+    start_date: date
+    end_date: date
+    schemes: Optional[List[str]] = None
+    include_chart: bool = True
+
+
+class ProviderTrendRequest(BaseModel):
+    provider: str
     start_date: date
     end_date: date
     schemes: Optional[List[str]] = None
@@ -196,6 +209,28 @@ def api_trends(req: TrendRequest):
     }
 
 
+@app.post("/api/unit-prices/trends")
+def api_provider_trends(req: ProviderTrendRequest):
+    try:
+        series = trend_series_for_provider(
+            provider=req.provider,
+            start=req.start_date,
+            end=req.end_date,
+            schemes=req.schemes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not series:
+        raise HTTPException(status_code=404, detail="No data available for requested period")
+
+    chart = generate_provider_trend_chart(req.provider, series) if req.include_chart else None
+    return {
+        "series": [s.__dict__ for s in series],
+        "chart": chart,
+    }
+
+
 @app.get("/api/asb/current-prices")
 def api_current_prices(
     lookback_days: int = Query(14, ge=2, le=60),
@@ -203,6 +238,22 @@ def api_current_prices(
 ):
     try:
         return current_price_changes(lookback_days=lookback_days, store=store)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/unit-prices/current")
+def api_provider_current_prices(
+    provider: str = Query("ASB"),
+    lookback_days: int = Query(14, ge=2, le=60),
+    store: bool = Query(True),
+):
+    try:
+        return current_price_changes_for_provider(
+            provider=provider,
+            lookback_days=lookback_days,
+            store=store,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

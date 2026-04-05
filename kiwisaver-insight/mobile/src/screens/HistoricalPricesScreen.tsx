@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,14 +10,20 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { LineChart } from 'react-native-chart-kit';
+import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { Calendar, TrendingDown, TrendingUp } from 'lucide-react-native';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input } from '../components/Input';
 import { ScreenContainer } from '../components/ScreenContainer';
+import { SCHEME_PROVIDERS } from '../constants/schemes';
 import { theme } from '../constants/theme';
-import { createAlertRule, getAlertRules, getCurrentPrices, getTrends } from '../services/api';
+import {
+  createAlertRule,
+  getAlertRules,
+  getProviderCurrentPrices,
+  getProviderTrends,
+} from '../services/api';
 
 type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
@@ -85,9 +92,163 @@ const formatLabel = (isoDate: string, period: Period) => {
   return `${date.getMonth() + 1}/${String(date.getFullYear()).slice(-2)}`;
 };
 
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const HistoricalTrendChart = ({
+  width,
+  points,
+  period,
+}: {
+  width: number;
+  points: TrendPoint[];
+  period: Period;
+}) => {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const chartHeight = 220;
+  const paddingLeft = 52;
+  const paddingRight = 16;
+  const paddingTop = 16;
+  const paddingBottom = 36;
+  const plotWidth = Math.max(1, width - paddingLeft - paddingRight);
+  const plotHeight = chartHeight - paddingTop - paddingBottom;
+  const values = points.map((point) => point.unit_price);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const minValue = rawMin === rawMax ? rawMin - 1 : rawMin;
+  const maxValue = rawMin === rawMax ? rawMax + 1 : rawMax;
+  const valueRange = maxValue - minValue || 1;
+  const xStep = points.length > 1 ? plotWidth / (points.length - 1) : 0;
+  const yTicks = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const value = maxValue - ratio * valueRange;
+    const y = paddingTop + ratio * plotHeight;
+    return { value, y };
+  });
+  const labelInterval = Math.max(1, Math.ceil(points.length / 6));
+  const tooltipWidth = 180;
+
+  const xForIndex = (index: number) => paddingLeft + index * xStep;
+  const yForValue = (value: number) => paddingTop + ((maxValue - value) / valueRange) * plotHeight;
+  const hoveredPoint = hoveredIndex != null ? points[hoveredIndex] ?? null : null;
+  const hoveredX = hoveredIndex != null ? xForIndex(hoveredIndex) : null;
+  const tooltipLeft =
+    hoveredX == null
+      ? paddingLeft
+      : clamp(hoveredX - tooltipWidth / 2, paddingLeft, width - paddingRight - tooltipWidth);
+
+  return (
+    <View style={[styles.chartFrame, { width, height: chartHeight }]}>
+      <Svg width={width} height={chartHeight}>
+        {yTicks.map((tick) => (
+          <React.Fragment key={`history-y-${tick.y}`}>
+            <Line
+              x1={paddingLeft}
+              y1={tick.y}
+              x2={width - paddingRight}
+              y2={tick.y}
+              stroke="#e2e8f0"
+              strokeWidth="1"
+            />
+            <SvgText x={paddingLeft - 8} y={tick.y + 4} fontSize="11" fill="#64748b" textAnchor="end">
+              ${tick.value.toFixed(4)}
+            </SvgText>
+          </React.Fragment>
+        ))}
+
+        <Line
+          x1={paddingLeft}
+          y1={paddingTop + plotHeight}
+          x2={width - paddingRight}
+          y2={paddingTop + plotHeight}
+          stroke="#94a3b8"
+          strokeWidth="1"
+        />
+
+        {hoveredX != null ? (
+          <Line
+            x1={hoveredX}
+            y1={paddingTop}
+            x2={hoveredX}
+            y2={paddingTop + plotHeight}
+            stroke="#94a3b8"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+          />
+        ) : null}
+
+        {points
+          .filter((_, index) => index % labelInterval === 0 || index === points.length - 1)
+          .map((point, index, source) => {
+            const originalIndex = points.findIndex((candidate) => candidate.date === point.date);
+            return (
+              <SvgText
+                key={`history-x-${point.date}-${index}-${source.length}`}
+                x={xForIndex(originalIndex)}
+                y={chartHeight - 10}
+                fontSize="11"
+                fill="#64748b"
+                textAnchor="middle"
+              >
+                {formatLabel(point.date, period)}
+              </SvgText>
+            );
+          })}
+
+        <Polyline
+          points={points.map((point, index) => `${xForIndex(index)},${yForValue(point.unit_price)}`).join(' ')}
+          fill="none"
+          stroke={theme.colors.primary}
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+
+        {hoveredPoint && hoveredIndex != null ? (
+          <Circle cx={xForIndex(hoveredIndex)} cy={yForValue(hoveredPoint.unit_price)} r="4" fill={theme.colors.primary} />
+        ) : null}
+      </Svg>
+
+      <View style={styles.chartHitArea} pointerEvents="box-none">
+        {points.map((point, index) => {
+          const x = xForIndex(index);
+          const left = index === 0 ? paddingLeft : x - xStep / 2;
+          const right = index === points.length - 1 ? width - paddingRight : x + xStep / 2;
+          return (
+            <Pressable
+              key={`history-hit-${point.date}-${index}`}
+              testID={`historical-chart-hit-${index}`}
+              style={[
+                styles.chartHitBox,
+                {
+                  left,
+                  top: paddingTop,
+                  width: Math.max(right - left, 8),
+                  height: plotHeight,
+                },
+              ]}
+              onHoverIn={() => setHoveredIndex(index)}
+              onHoverOut={() => setHoveredIndex((current) => (current === index ? null : current))}
+              onPressIn={() => setHoveredIndex(index)}
+              onPressOut={() => setHoveredIndex((current) => (current === index ? null : current))}
+            />
+          );
+        })}
+      </View>
+
+      {hoveredPoint ? (
+        <View style={[styles.chartTooltip, { left: tooltipLeft, top: paddingTop + 8 }]}>
+          <Text style={styles.chartTooltipTitle}>{hoveredPoint.date}</Text>
+          <Text style={styles.chartTooltipValue}>${hoveredPoint.unit_price.toFixed(4)}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
 export const HistoricalPricesScreen = () => {
   const { width } = useWindowDimensions();
   const [period, setPeriod] = useState<Period>('3M');
+  const [selectedProvider, setSelectedProvider] = useState<string>('ASB');
   const [currentData, setCurrentData] = useState<CurrentPricesResponse | null>(null);
   const [selectedScheme, setSelectedScheme] = useState<string | null>(null);
   const [trendPoints, setTrendPoints] = useState<TrendPoint[]>([]);
@@ -140,15 +301,17 @@ export const HistoricalPricesScreen = () => {
     return subtractDays(currentData.latest_price_date, PERIOD_DAYS[period] - 1);
   }, [currentData, period]);
 
-  const loadCurrentPrices = async (showRefreshState: boolean = false) => {
+  const loadCurrentPrices = async (provider: string, showRefreshState: boolean = false) => {
     if (showRefreshState) {
       setRefreshing(true);
     } else {
       setLoadingSummary(true);
+      setCurrentData(null);
+      setTrendPoints([]);
     }
 
     try {
-      const response = await getCurrentPrices(14, true);
+      const response = await getProviderCurrentPrices(provider, 14, true);
       setCurrentData(response);
       setSelectedScheme((current) => {
         if (current && response.funds.some((fund) => fund.scheme === current)) {
@@ -158,6 +321,8 @@ export const HistoricalPricesScreen = () => {
       });
       setError(null);
     } catch (err) {
+      setCurrentData(null);
+      setSelectedScheme(null);
       setError('Unable to load live KiwiSaver prices right now.');
     } finally {
       setLoadingSummary(false);
@@ -175,7 +340,10 @@ export const HistoricalPricesScreen = () => {
   };
 
   useEffect(() => {
-    loadCurrentPrices();
+    loadCurrentPrices(selectedProvider);
+  }, [selectedProvider]);
+
+  useEffect(() => {
     loadAlertRules();
   }, []);
 
@@ -192,7 +360,7 @@ export const HistoricalPricesScreen = () => {
       try {
         const endDate = currentData.latest_price_date;
         const startDate = subtractDays(endDate, PERIOD_DAYS[period] - 1);
-        const response = await getTrends(startDate, endDate, [selectedScheme], false);
+        const response = await getProviderTrends(currentData.provider, startDate, endDate, [selectedScheme], false);
         const points = response.series?.[0]?.points ?? [];
         if (!active) {
           return;
@@ -219,26 +387,6 @@ export const HistoricalPricesScreen = () => {
     };
   }, [currentData, selectedScheme, period]);
 
-  const chartData = useMemo(() => {
-    if (!trendPoints.length) {
-      return null;
-    }
-
-    const interval = Math.max(1, Math.floor(trendPoints.length / 6));
-    return {
-      labels: trendPoints.map((point, index) =>
-        index % interval === 0 || index === trendPoints.length - 1 ? formatLabel(point.date, period) : ''
-      ),
-      datasets: [
-        {
-          data: trendPoints.map((point) => point.unit_price),
-          color: () => theme.colors.primary,
-          strokeWidth: 2,
-        },
-      ],
-    };
-  }, [trendPoints, period]);
-
   const chartSummary = useMemo(() => {
     if (!trendPoints.length) {
       return null;
@@ -254,12 +402,6 @@ export const HistoricalPricesScreen = () => {
   }, [trendPoints]);
 
   const chartWidth = Math.min(width - 64, 960);
-  const chartKey = useMemo(() => {
-    const firstDate = trendPoints[0]?.date ?? 'none';
-    const lastDate = trendPoints[trendPoints.length - 1]?.date ?? 'none';
-    return `${selectedScheme ?? 'none'}-${period}-${firstDate}-${lastDate}-${trendPoints.length}`;
-  }, [period, selectedScheme, trendPoints]);
-
   const alertTargetLabel = alertMetric === 'percent_change' ? 'Target Move (%)' : 'Target Unit Price';
   const alertHint =
     alertMetric === 'percent_change'
@@ -313,14 +455,36 @@ export const HistoricalPricesScreen = () => {
     <ScreenContainer>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadCurrentPrices(true)} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => loadCurrentPrices(selectedProvider, true)} />
+        }
       >
         <View style={styles.header}>
           <Text style={theme.typography.h2}>Live KiwiSaver Unit Prices</Text>
           <Text style={theme.typography.caption}>
-            Current changes for ASB KiwiSaver funds, compared with the previous published snapshot.
+            Current changes for the selected provider's KiwiSaver funds, compared with the previous published snapshot.
           </Text>
         </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Switch Provider</Text>
+          <Text style={styles.sectionCaption}>Choose a provider before switching between that provider's funds.</Text>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.providerScroll}>
+          {SCHEME_PROVIDERS.map((provider) => {
+            const isSelected = provider === selectedProvider;
+            return (
+              <TouchableOpacity
+                key={provider}
+                style={[styles.providerChip, isSelected && styles.providerChipSelected]}
+                onPress={() => setSelectedProvider(provider)}
+              >
+                <Text style={[styles.providerChipText, isSelected && styles.providerChipTextSelected]}>{provider}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         {loadingSummary ? (
           <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
@@ -520,27 +684,8 @@ export const HistoricalPricesScreen = () => {
             </View>
             {loadingTrend ? <ActivityIndicator size="small" color={theme.colors.primary} /> : null}
           </View>
-          {chartData ? (
-            <LineChart
-              key={chartKey}
-              data={chartData}
-              width={chartWidth}
-              height={220}
-              withDots={false}
-              withInnerLines={false}
-              yAxisLabel="$"
-              chartConfig={{
-                backgroundColor: theme.colors.card,
-                backgroundGradientFrom: theme.colors.card,
-                backgroundGradientTo: theme.colors.card,
-                decimalPlaces: 4,
-                color: () => theme.colors.primary,
-                labelColor: () => theme.colors.textSecondary,
-                propsForDots: { r: '0' },
-              }}
-              bezier
-              style={styles.chart}
-            />
+          {trendPoints.length > 0 ? (
+            <HistoricalTrendChart width={chartWidth} points={trendPoints} period={period} />
           ) : (
             <Text style={styles.emptyText}>No trend data is available for the selected fund yet.</Text>
           )}
@@ -721,6 +866,30 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     marginTop: 8,
   },
+  providerScroll: {
+    marginBottom: theme.spacing.m,
+    maxHeight: 48,
+  },
+  providerChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: theme.colors.card,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  providerChipSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  providerChipText: {
+    color: theme.colors.text,
+    fontWeight: '600',
+  },
+  providerChipTextSelected: {
+    color: '#ffffff',
+  },
   fundSwitchScroll: {
     marginBottom: theme.spacing.m,
     maxHeight: 72,
@@ -788,6 +957,37 @@ const styles = StyleSheet.create({
   chartSubtext: {
     ...theme.typography.caption,
     marginTop: 2,
+  },
+  chartFrame: {
+    position: 'relative',
+  },
+  chartHitArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  chartHitBox: {
+    position: 'absolute',
+  },
+  chartTooltip: {
+    position: 'absolute',
+    width: 180,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  chartTooltipTitle: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  chartTooltipValue: {
+    color: '#cbd5e1',
+    fontSize: 12,
   },
   chart: {
     marginVertical: 8,
