@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from dotenv import load_dotenv
 
-# Ensure local .env is honoured both in CLI and container usage
+# Ensure local .env is honoured both in CLI and container usage.
 load_dotenv()
 
 
@@ -12,9 +12,10 @@ load_dotenv()
 class Settings:
     """Centralised configuration for the KiwiSaver insight toolchain."""
 
+    # Defaults here are example-only. Real local values should come from `.env`.
     db_name: str = os.getenv("DB_NAME", "kiwisaver")
-    db_user: str = os.getenv("DB_USER", "postgres")
-    db_password: str = os.getenv("DB_PASSWORD", "postgres")
+    db_user: str = os.getenv("DB_USER", "kiwisaver_app")
+    db_password: str = os.getenv("DB_PASSWORD", "change_me_local_db_password")
     db_host: str = os.getenv("DB_HOST", "localhost")
     db_port: int = int(os.getenv("DB_PORT", "5432"))
     kafka_bootstrap_servers: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "")

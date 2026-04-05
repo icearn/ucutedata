@@ -10,3 +10,4 @@ kiwisaver-insight/tests/__pycache__/*
 kiwisaver-insight/kiwisaver_insight/services/__pycache__/*
 kiwisaver-insight/kiwisaver_insight/__pycache__/**
 spending-track/tests/receipts/*.jpg
+kiwisaver-insight/.env
