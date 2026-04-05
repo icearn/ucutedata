@@ -103,13 +103,54 @@ export const runStrategyBacktest = async (
   conditions: any[],
   initialFunds: number,
   monthlyContribution: number,
-  years: number = 10
+  years: number = 10,
+  selectedScheme?: string
 ) => {
   const response = await api.post('/api/strategy/backtest', {
     conditions,
     initial_funds: initialFunds,
     monthly_contribution: monthlyContribution,
     years,
+    selected_scheme: selectedScheme,
+  });
+  return response.data;
+};
+
+export const fetchScenarioComparison = async (
+  selectedScheme: string,
+  initialFunds: number,
+  monthlyContribution: number,
+  years: number
+) => {
+  const response = await api.post('/api/scenarios/compare', {
+    selected_scheme: selectedScheme,
+    initial_funds: initialFunds,
+    monthly_contribution: monthlyContribution,
+    years,
+  });
+  return response.data;
+};
+
+export const fetchStrategyRecommendation = async (payload: {
+  selected_scheme: string;
+  initial_funds: number;
+  monthly_contribution: number;
+  years?: number;
+  user_id?: string;
+  risk_preference?: string;
+  objective?: string;
+  persist?: boolean;
+}) => {
+  const response = await api.post('/api/strategy/recommendation', payload);
+  return response.data;
+};
+
+export const getLatestStrategyRecommendation = async (userId: string, selectedScheme?: string) => {
+  const response = await api.get('/api/strategy/recommendation/latest', {
+    params: {
+      user_id: userId,
+      selected_scheme: selectedScheme,
+    },
   });
   return response.data;
 };

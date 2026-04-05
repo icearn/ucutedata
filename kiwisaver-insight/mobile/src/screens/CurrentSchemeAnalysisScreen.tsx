@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LineChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { fetchCurrentSchemeAnalysis } from '../services/api';
 import { theme } from '../constants/theme';
 import { SchemeData, TimePeriod } from '../types';
@@ -103,6 +103,168 @@ const getLegendLabel = (schemeId: string, fallbackName: string) => {
   return `${scheme.provider} ${scheme.type}`;
 };
 
+const formatMonthKeyLabel = (monthKey: string) => {
+  const [year, month] = monthKey.split('-');
+  return `${month}/${year.slice(-2)}`;
+};
+
+type HistoricalSeries = {
+  key: string;
+  label: string;
+  color: string;
+  points: { monthKey: string; value: number }[];
+  availableStart: string | null;
+  availableEnd: string | null;
+  pointCount: number;
+};
+
+const AnalysisHistoryChart = ({
+  width,
+  series,
+  monthKeys,
+  showPercentage,
+}: {
+  width: number;
+  series: HistoricalSeries[];
+  monthKeys: string[];
+  showPercentage: boolean;
+}) => {
+  const chartHeight = 260;
+  const paddingLeft = 52;
+  const paddingRight = 16;
+  const paddingTop = 16;
+  const paddingBottom = 36;
+  const plotWidth = Math.max(1, width - paddingLeft - paddingRight);
+  const plotHeight = chartHeight - paddingTop - paddingBottom;
+
+  const normalizedSeries = series.map((item) => {
+    const baseline = item.points[0]?.value ?? 0;
+    const points = item.points.map((point) => ({
+      ...point,
+      value:
+        showPercentage && baseline
+          ? ((point.value - baseline) / baseline) * 100
+          : point.value,
+    }));
+    return {
+      ...item,
+      points,
+    };
+  });
+
+  const allValues = normalizedSeries.flatMap((item) => item.points.map((point) => point.value));
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  const minValue = rawMin === rawMax ? rawMin - 1 : rawMin;
+  const maxValue = rawMin === rawMax ? rawMax + 1 : rawMax;
+  const valueRange = maxValue - minValue || 1;
+  const monthIndex = new Map(monthKeys.map((monthKey, index) => [monthKey, index]));
+  const xStep = monthKeys.length > 1 ? plotWidth / (monthKeys.length - 1) : 0;
+
+  const xForMonth = (monthKey: string) => paddingLeft + (monthIndex.get(monthKey) ?? 0) * xStep;
+  const yForValue = (value: number) => paddingTop + ((maxValue - value) / valueRange) * plotHeight;
+
+  const yTicks = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const value = maxValue - ratio * valueRange;
+    const y = paddingTop + ratio * plotHeight;
+    return { value, y };
+  });
+
+  const labelInterval = Math.max(1, Math.ceil(monthKeys.length / 6));
+  const xLabels = monthKeys.filter((_, index) => index % labelInterval === 0 || index === monthKeys.length - 1);
+
+  return (
+    <View>
+      <Svg width={width} height={chartHeight}>
+        {yTicks.map((tick) => (
+          <React.Fragment key={`y-${tick.y}`}>
+            <Line
+              x1={paddingLeft}
+              y1={tick.y}
+              x2={width - paddingRight}
+              y2={tick.y}
+              stroke="#e2e8f0"
+              strokeWidth="1"
+            />
+            <SvgText
+              x={paddingLeft - 8}
+              y={tick.y + 4}
+              fontSize="11"
+              fill="#64748b"
+              textAnchor="end"
+            >
+              {showPercentage ? `${tick.value.toFixed(1)}%` : `$${tick.value.toFixed(2)}`}
+            </SvgText>
+          </React.Fragment>
+        ))}
+
+        <Line
+          x1={paddingLeft}
+          y1={paddingTop + plotHeight}
+          x2={width - paddingRight}
+          y2={paddingTop + plotHeight}
+          stroke="#94a3b8"
+          strokeWidth="1"
+        />
+
+        {xLabels.map((monthKey) => (
+          <SvgText
+            key={`x-${monthKey}`}
+            x={xForMonth(monthKey)}
+            y={chartHeight - 10}
+            fontSize="11"
+            fill="#64748b"
+            textAnchor="middle"
+          >
+            {formatMonthKeyLabel(monthKey)}
+          </SvgText>
+        ))}
+
+        {normalizedSeries.map((item) => {
+          const points = item.points
+            .map((point) => `${xForMonth(point.monthKey)},${yForValue(point.value)}`)
+            .join(' ');
+
+          return (
+            <React.Fragment key={item.key}>
+              {item.points.length > 1 ? (
+                <Polyline
+                  points={points}
+                  fill="none"
+                  stroke={item.color}
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              ) : null}
+              {item.points.length === 1 ? (
+                <Circle
+                  cx={xForMonth(item.points[0].monthKey)}
+                  cy={yForValue(item.points[0].value)}
+                  r="4"
+                  fill={item.color}
+                />
+              ) : null}
+            </React.Fragment>
+          );
+        })}
+      </Svg>
+
+      <View style={styles.chartLegendWrap}>
+        {series.map((item) => (
+          <View key={`legend-${item.key}`} style={styles.chartLegendItem}>
+            <View style={[styles.chartLegendDot, { backgroundColor: item.color }]} />
+            <Text style={styles.chartLegendText}>
+              {item.label}: {item.availableStart ?? 'n/a'} to {item.availableEnd ?? 'n/a'} ({item.pointCount} pts)
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+};
+
 export const CurrentSchemeAnalysisScreen = () => {
   const { width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
@@ -180,6 +342,7 @@ export const CurrentSchemeAnalysisScreen = () => {
   const quickViews = useMemo(
     () => [
       { label: 'Aggressive Across Providers', provider: ALL_PROVIDERS, risk: 'Aggressive' },
+      { label: 'Cash Across Providers', provider: ALL_PROVIDERS, risk: 'Cash' },
       ...SCHEME_PROVIDERS.map((provider) => ({
         label: `${provider} Full Range`,
         provider,
@@ -209,46 +372,68 @@ export const CurrentSchemeAnalysisScreen = () => {
     });
   };
 
-  const chartData = useMemo(() => {
+  const chartState = useMemo(() => {
     if (analysisResults.length === 0) {
-      return null;
-    }
-
-    const baseResult = analysisResults[0];
-    if (!baseResult.history || baseResult.history.length === 0) {
-      return null;
-    }
-
-    const labelInterval = Math.ceil(baseResult.history.length / 6);
-    const labels = baseResult.history
-      .filter((_: any, index: number) => index % labelInterval === 0)
-      .map((point: any) => {
-        const pointDate = new Date(point.date);
-        return `${pointDate.getFullYear()}`;
-      });
-
-    const datasets = analysisResults.map((result: any) => {
-      const scheme = ANALYSIS_SCHEMES.find((item) => item.id === result.scheme.id);
-      let data = result.history.map((entry: any) => entry.price);
-
-      if (showPercentage && data.length > 0) {
-        const startPrice = data[0];
-        data = data.map((price: number) => ((price - startPrice) / startPrice) * 100);
-      }
-
       return {
-        data,
-        color: (opacity = 1) => scheme?.color || `rgba(0, 0, 0, ${opacity})`,
-        strokeWidth: 2,
+        monthKeys: [] as string[],
+        series: [] as HistoricalSeries[],
+        rangeSummary: null,
+        emptyMessage: null,
       };
+    }
+
+    const historyResults = analysisResults
+      .map((result: any) => ({
+        result,
+        history: Array.isArray(result.history) ? result.history : [],
+      }))
+      .filter((item) => item.history.length > 0);
+
+    if (historyResults.length === 0) {
+      return {
+        monthKeys: [] as string[],
+        series: [] as HistoricalSeries[],
+        rangeSummary: null,
+        emptyMessage: 'No real historical unit price data is available for the selected schemes yet.',
+      };
+    }
+
+    const series = historyResults.map(({ result, history }: any) => {
+      const scheme = ANALYSIS_SCHEMES.find((item) => item.id === result.scheme.id);
+      return {
+        key: result.scheme.id,
+        label: getLegendLabel(result.scheme.id, result.scheme.name),
+        color: scheme?.color || '#0f172a',
+        points: history.map((point: any) => ({
+          monthKey: String(point.date).slice(0, 7),
+          value: Number(point.price),
+        })),
+        availableStart: result.history_window?.available_start ?? history[0]?.date ?? null,
+        availableEnd: result.history_window?.available_end ?? history[history.length - 1]?.date ?? null,
+        pointCount: Number(result.history_window?.point_count ?? history.length),
+      } as HistoricalSeries;
     });
 
+    const monthKeys = Array.from(
+      new Set(series.flatMap((item) => item.points.map((point) => point.monthKey)))
+    ).sort();
+
+    if (monthKeys.length === 0) {
+      return {
+        monthKeys: [],
+        series,
+        rangeSummary: null,
+        emptyMessage: 'No real historical unit price data is available for the selected schemes yet.',
+      };
+    }
+
     return {
-      labels,
-      datasets,
-      legend: analysisResults.map((result: any) => getLegendLabel(result.scheme.id, result.scheme.name)),
+      monthKeys,
+      series,
+      rangeSummary: `Timeline shown: ${monthKeys[0]} to ${monthKeys[monthKeys.length - 1]} (${monthKeys.length} monthly ticks)`,
+      emptyMessage: null,
     };
-  }, [analysisResults, showPercentage]);
+  }, [analysisResults]);
 
   const bestPerformer = useMemo(() => {
     if (analysisResults.length === 0) {
@@ -280,7 +465,7 @@ export const CurrentSchemeAnalysisScreen = () => {
             <View style={styles.bannerTextContainer}>
               <Text style={styles.bannerTitle}>Welcome to Your Analysis</Text>
               <Text style={styles.bannerText}>
-                Compare aggressive funds across providers, or narrow the view to one provider and review its full risk range.
+                Compare aggressive or cash funds across providers, or narrow the view to one provider and review its full range.
               </Text>
             </View>
           </View>
@@ -462,7 +647,7 @@ export const CurrentSchemeAnalysisScreen = () => {
 
         {loading ? (
           <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loadingState} />
-        ) : chartData ? (
+        ) : (
           <View style={styles.chartContainer}>
             <View style={styles.chartHeader}>
               <Text style={styles.sectionTitle}>Unit Price History</Text>
@@ -481,26 +666,22 @@ export const CurrentSchemeAnalysisScreen = () => {
                 </TouchableOpacity>
               </View>
             </View>
-            <LineChart
-              data={chartData}
-              width={chartWidth}
-              height={220}
-              yAxisSuffix={showPercentage ? '%' : ''}
-              chartConfig={{
-                backgroundColor: '#ffffff',
-                backgroundGradientFrom: '#ffffff',
-                backgroundGradientTo: '#ffffff',
-                decimalPlaces: 2,
-                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                style: { borderRadius: 16 },
-                propsForDots: { r: '0' },
-              }}
-              bezier
-              style={styles.chart}
-            />
+            <Text style={styles.chartMeta}>
+              DB-backed provider history sampled into monthly real-price points. Each line only appears where real data exists.
+            </Text>
+            {chartState.rangeSummary ? <Text style={styles.chartMeta}>{chartState.rangeSummary}</Text> : null}
+            {chartState.series.length > 0 && chartState.monthKeys.length > 0 ? (
+              <AnalysisHistoryChart
+                width={chartWidth}
+                series={chartState.series}
+                monthKeys={chartState.monthKeys}
+                showPercentage={showPercentage}
+              />
+            ) : (
+              <Text style={styles.emptyStateText}>{chartState.emptyMessage}</Text>
+            )}
           </View>
-        ) : null}
+        )}
 
         {analysisResults.length > 0 && (
           <View style={styles.section}>
@@ -876,6 +1057,31 @@ const styles = StyleSheet.create({
   chart: {
     marginVertical: 8,
     borderRadius: 16,
+  },
+  chartMeta: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  chartLegendWrap: {
+    marginTop: 8,
+    gap: 6,
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chartLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  chartLegendText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#475569',
   },
   toggleContainer: {
     flexDirection: 'row',

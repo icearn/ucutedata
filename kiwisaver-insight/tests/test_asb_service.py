@@ -113,3 +113,47 @@ def test_ensure_history_backfills_missing_older_window(monkeypatch):
     assert fetched_ranges == [(date(2026, 1, 1), date(2026, 2, 28), True)]
     assert rows[0]["date"] == date(2026, 1, 2)
     assert rows[-1]["date"] == date(2026, 3, 30)
+
+
+def test_current_price_changes_falls_back_to_db_snapshots_when_live_fetch_fails(monkeypatch):
+    def raise_live_fetch(*args, **kwargs):
+        raise RuntimeError("source blocked")
+
+    monkeypatch.setattr(asb_service, "_fetch_unique_history_rows", raise_live_fetch)
+    monkeypatch.setattr(
+        asb_service,
+        "fetch_prices",
+        lambda provider, scheme=None, start_date=None, end_date=None: [
+            {"scheme": "Aggressive Fund", "unit_price": 1.3661, "date": date(2026, 3, 27)},
+            {"scheme": "Balanced Fund", "unit_price": 3.1364, "date": date(2026, 3, 27)},
+            {"scheme": "Aggressive Fund", "unit_price": 1.3643, "date": date(2026, 3, 29)},
+            {"scheme": "Balanced Fund", "unit_price": 3.1348, "date": date(2026, 3, 29)},
+        ],
+    )
+
+    result = asb_service.current_price_changes(lookback_days=14, store=True, end=date(2026, 3, 30))
+
+    assert result["source"] == "db_fallback"
+    assert result["latest_price_date"] == "2026-03-29"
+    assert result["previous_price_date"] == "2026-03-27"
+    assert result["warning"] == "Live ASB fetch failed; showing the latest stored database snapshots."
+    assert result["funds"][0]["scheme"] == "Aggressive Fund"
+
+
+def test_ensure_history_returns_existing_rows_when_backfill_fails(monkeypatch):
+    existing_rows = [
+        {"scheme": "Aggressive Fund", "unit_price": 1.10, "date": date(2026, 3, 1)},
+        {"scheme": "Aggressive Fund", "unit_price": 1.12, "date": date(2026, 3, 15)},
+        {"scheme": "Aggressive Fund", "unit_price": 1.14, "date": date(2026, 3, 30)},
+    ]
+
+    monkeypatch.setattr(asb_service, "fetch_prices", lambda provider, scheme=None, start_date=None, end_date=None: existing_rows)
+    monkeypatch.setattr(
+        asb_service,
+        "fetch_history",
+        lambda start, end, store=False: (_ for _ in ()).throw(RuntimeError("blocked")),
+    )
+
+    rows = asb_service.ensure_history(date(2026, 1, 1), date(2026, 3, 30))
+
+    assert rows == existing_rows

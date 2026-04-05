@@ -53,3 +53,18 @@ CREATE TABLE IF NOT EXISTS kiwisaver_alert_events (
 
 CREATE INDEX IF NOT EXISTS idx_kiwisaver_alert_events_rule_id
     ON kiwisaver_alert_events (rule_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS kiwisaver_strategy_recommendations (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT,
+    selected_scheme TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    risk_preference TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    recommended_strategy_id TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_kiwisaver_strategy_recommendations_lookup
+    ON kiwisaver_strategy_recommendations (user_id, selected_scheme, created_at DESC);

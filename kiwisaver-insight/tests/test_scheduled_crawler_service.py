@@ -8,10 +8,12 @@ def test_run_incremental_crawl_resumes_from_latest_db_dates(monkeypatch):
     latest_dates = {
         ("ASB", None): date(2026, 3, 30),
         ("ANZ", "Conservative Fund"): date(2026, 3, 27),
+        ("ANZ", "Cash Fund"): date(2026, 3, 27),
         ("ANZ", "Balanced Growth Fund"): date(2026, 3, 27),
         ("ANZ", "Growth Fund"): date(2026, 3, 27),
         ("ANZ", "High Growth Fund"): date(2026, 3, 27),
         ("Westpac", "Conservative Fund"): date(2026, 3, 29),
+        ("Westpac", "Cash Fund"): date(2026, 3, 29),
         ("Westpac", "Balanced Fund"): date(2026, 3, 29),
         ("Westpac", "Growth Fund"): date(2026, 3, 29),
         ("Westpac", "High Growth Fund"): date(2026, 3, 29),
@@ -46,6 +48,9 @@ def test_run_incremental_crawl_resumes_from_latest_db_dates(monkeypatch):
                 {"scheme": "Conservative Fund", "unit_price": 1.4, "date": date(2026, 3, 29)},
                 {"scheme": "Conservative Fund", "unit_price": 1.5, "date": date(2026, 3, 30)},
                 {"scheme": "Conservative Fund", "unit_price": 1.6, "date": date(2026, 4, 1)},
+                {"scheme": "Cash Fund", "unit_price": 1.65, "date": date(2026, 3, 29)},
+                {"scheme": "Cash Fund", "unit_price": 1.66, "date": date(2026, 3, 30)},
+                {"scheme": "Cash Fund", "unit_price": 1.67, "date": date(2026, 4, 1)},
                 {"scheme": "Balanced Fund", "unit_price": 1.7, "date": date(2026, 3, 29)},
                 {"scheme": "Balanced Fund", "unit_price": 1.8, "date": date(2026, 3, 30)},
                 {"scheme": "Balanced Fund", "unit_price": 1.9, "date": date(2026, 4, 1)},
@@ -69,7 +74,7 @@ def test_run_incremental_crawl_resumes_from_latest_db_dates(monkeypatch):
     jobs = {(job["provider"], job["scheme"]): job for job in result["jobs"]}
 
     assert asb_calls == [(date(2026, 3, 31), date(2026, 4, 1), True)]
-    assert result["total_fetched_rows"] == 17
+    assert result["total_fetched_rows"] == 21
     assert jobs[("ASB", "ALL")] == {
         "provider": "ASB",
         "scheme": "ALL",
@@ -152,6 +157,7 @@ def test_run_incremental_crawl_keeps_running_when_one_provider_errors(monkeypatc
         def fetch_prices(self):
             return [
                 {"scheme": "Conservative Fund", "unit_price": 2.1, "date": date(2026, 4, 1)},
+                {"scheme": "Cash Fund", "unit_price": 2.15, "date": date(2026, 4, 1)},
                 {"scheme": "Balanced Fund", "unit_price": 2.2, "date": date(2026, 4, 1)},
                 {"scheme": "Growth Fund", "unit_price": 2.3, "date": date(2026, 4, 1)},
                 {"scheme": "High Growth Fund", "unit_price": 2.4, "date": date(2026, 4, 1)},
@@ -169,7 +175,7 @@ def test_run_incremental_crawl_keeps_running_when_one_provider_errors(monkeypatc
     result = scheduled_crawler_service.run_incremental_crawl(end=date(2026, 4, 1))
     jobs = {(job["provider"], job["scheme"]): job for job in result["jobs"]}
 
-    assert result["total_fetched_rows"] == 8
+    assert result["total_fetched_rows"] == 10
     assert jobs[("ANZ", "High Growth Fund")] == {
         "provider": "ANZ",
         "scheme": "High Growth Fund",

@@ -16,6 +16,13 @@ Westpac Active Series
 
     rows = crawler._parse_text(text)
 
+    assert [row for row in rows if row["scheme"] == "Cash Fund"] == [
+        {"scheme": "Cash Fund", "unit_price": 1.7475, "date": date(2026, 3, 24)},
+        {"scheme": "Cash Fund", "unit_price": 1.7476, "date": date(2026, 3, 25)},
+        {"scheme": "Cash Fund", "unit_price": 1.7478, "date": date(2026, 3, 26)},
+        {"scheme": "Cash Fund", "unit_price": 1.7478, "date": date(2026, 3, 27)},
+        {"scheme": "Cash Fund", "unit_price": 1.7483, "date": date(2026, 3, 30)},
+    ]
     assert [row for row in rows if row["scheme"] == "High Growth Fund"] == [
         {"scheme": "High Growth Fund", "unit_price": 1.1281, "date": date(2026, 3, 24)},
         {"scheme": "High Growth Fund", "unit_price": 1.1419, "date": date(2026, 3, 25)},

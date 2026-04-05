@@ -28,6 +28,8 @@ jest.mock('../../services/api', () => ({
     final_balance: 15000,
     total_invested: 12000,
   })),
+  fetchStrategyRecommendation: jest.fn(() => Promise.resolve(null)),
+  getLatestStrategyRecommendation: jest.fn(() => Promise.reject({ response: { status: 404 } })),
 }));
 
 // Mock Expo Linear Gradient

@@ -12,6 +12,7 @@ def test_verify_live_sources_against_db_summarises_provider_statuses(monkeypatch
             "latest_price_date": "2026-03-31",
             "funds": [
                 {"scheme": "Conservative Fund", "current_unit_price": 1.1234},
+                {"scheme": "NZ Cash Fund", "current_unit_price": 1.015},
                 {"scheme": "Moderate Fund", "current_unit_price": 1.1789},
                 {"scheme": "Growth Fund", "current_unit_price": 1.205},
                 {"scheme": "Aggressive Fund", "current_unit_price": 1.2345},
@@ -23,6 +24,7 @@ def test_verify_live_sources_against_db_summarises_provider_statuses(monkeypatch
         def fetch_prices(self):
             return [
                 {"scheme": "Conservative Fund", "unit_price": 2.101, "date": date(2026, 3, 30)},
+                {"scheme": "Cash Fund", "unit_price": 2.05, "date": date(2026, 3, 30)},
                 {"scheme": "Balanced Growth Fund", "unit_price": 2.202, "date": date(2026, 3, 30)},
                 {"scheme": "Growth Fund", "unit_price": 2.303, "date": date(2026, 3, 30)},
                 {"scheme": "High Growth Fund", "unit_price": 2.3456, "date": date(2026, 3, 30)},
@@ -32,6 +34,7 @@ def test_verify_live_sources_against_db_summarises_provider_statuses(monkeypatch
         def fetch_prices(self):
             return [
                 {"scheme": "Conservative Fund", "unit_price": 3.101, "date": date(2026, 3, 29)},
+                {"scheme": "Cash Fund", "unit_price": 3.01, "date": date(2026, 3, 29)},
                 {"scheme": "Balanced Fund", "unit_price": 3.202, "date": date(2026, 3, 29)},
                 {"scheme": "Growth Fund", "unit_price": 3.303, "date": date(2026, 3, 29)},
                 {"scheme": "High Growth Fund", "unit_price": 3.4567, "date": date(2026, 3, 29)},
@@ -39,14 +42,17 @@ def test_verify_live_sources_against_db_summarises_provider_statuses(monkeypatch
 
     live_rows = {
         ("ASB", "Conservative Fund"): (1.1234, date(2026, 3, 31)),
+        ("ASB", "NZ Cash Fund"): (1.015, date(2026, 3, 31)),
         ("ASB", "Moderate Fund"): (1.1789, date(2026, 3, 31)),
         ("ASB", "Growth Fund"): (1.205, date(2026, 3, 31)),
         ("ASB", "Aggressive Fund"): (1.2345, date(2026, 3, 31)),
         ("ANZ", "Conservative Fund"): (2.101, date(2026, 3, 30)),
+        ("ANZ", "Cash Fund"): (2.05, date(2026, 3, 30)),
         ("ANZ", "Balanced Growth Fund"): (2.202, date(2026, 3, 30)),
         ("ANZ", "Growth Fund"): (2.303, date(2026, 3, 30)),
         ("ANZ", "High Growth Fund"): (2.3456, date(2026, 3, 30)),
         ("Westpac", "Conservative Fund"): (3.101, date(2026, 3, 29)),
+        ("Westpac", "Cash Fund"): (3.01, date(2026, 3, 29)),
         ("Westpac", "Balanced Fund"): (3.202, date(2026, 3, 29)),
         ("Westpac", "Growth Fund"): (3.303, date(2026, 3, 29)),
         ("Westpac", "High Growth Fund"): (3.4567, date(2026, 3, 29)),

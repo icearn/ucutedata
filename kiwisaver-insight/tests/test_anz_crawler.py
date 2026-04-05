@@ -100,6 +100,7 @@ def test_anz_crawler_fetch_prices_collects_supported_scheme_set(monkeypatch):
 
     assert [row["scheme"] for row in rows] == [
         "Balanced Growth Fund",
+        "Cash Fund",
         "Conservative Fund",
         "Growth Fund",
         "High Growth Fund",

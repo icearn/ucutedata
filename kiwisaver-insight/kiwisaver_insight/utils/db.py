@@ -3,10 +3,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
+import json
 from typing import Dict, Iterable, List, Optional
 
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import Json, execute_values
 
 from kiwisaver_insight.config import settings
 
@@ -74,6 +75,21 @@ CREATE TABLE IF NOT EXISTS kiwisaver_alert_events (
 
 CREATE INDEX IF NOT EXISTS idx_kiwisaver_alert_events_rule_id
     ON kiwisaver_alert_events (rule_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS kiwisaver_strategy_recommendations (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT,
+    selected_scheme TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    risk_preference TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    recommended_strategy_id TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_kiwisaver_strategy_recommendations_lookup
+    ON kiwisaver_strategy_recommendations (user_id, selected_scheme, created_at DESC);
 """
 
 
@@ -215,3 +231,83 @@ def fetch_latest_price_date(provider: str, scheme: Optional[str] = None) -> Opti
 
     latest_date = row[0] if row else None
     return latest_date if latest_date is not None else None
+
+
+def insert_strategy_recommendation(
+    user_id: Optional[str],
+    selected_scheme: str,
+    provider: str,
+    risk_preference: str,
+    objective: str,
+    recommended_strategy_id: str,
+    payload: Dict,
+) -> Dict:
+    sql = """
+        INSERT INTO kiwisaver_strategy_recommendations (
+            user_id,
+            selected_scheme,
+            provider,
+            risk_preference,
+            objective,
+            recommended_strategy_id,
+            payload
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, created_at
+    """
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (
+                    user_id,
+                    selected_scheme,
+                    provider,
+                    risk_preference,
+                    objective,
+                    recommended_strategy_id,
+                    Json(payload),
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    return {
+        "id": row[0],
+        "created_at": row[1].isoformat(),
+    }
+
+
+def fetch_latest_strategy_recommendation(user_id: str, selected_scheme: Optional[str] = None) -> Optional[Dict]:
+    query = [
+        "SELECT id, payload, created_at",
+        "FROM kiwisaver_strategy_recommendations",
+        "WHERE user_id = %s",
+    ]
+    params: List = [user_id]
+
+    if selected_scheme:
+        query.append("AND selected_scheme = %s")
+        params.append(selected_scheme)
+
+    query.append("ORDER BY created_at DESC")
+    query.append("LIMIT 1")
+
+    sql = " ".join(query)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+
+    if not row:
+        return None
+
+    payload = row[1]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    payload["recommendation_record"] = {
+        "id": row[0],
+        "created_at": row[2].isoformat(),
+    }
+    return payload

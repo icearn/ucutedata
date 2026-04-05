@@ -49,6 +49,59 @@ def _serialise_rows(rows: Sequence[Dict]) -> List[Dict]:
     ]
 
 
+def _group_snapshots(rows: Sequence[Dict]) -> "OrderedDict[str, List[Dict]]":
+    snapshots: "OrderedDict[str, List[Dict]]" = OrderedDict()
+    for row in rows:
+        snapshot_date = row["date"].isoformat() if isinstance(row["date"], date) else str(row["date"])
+        snapshots.setdefault(snapshot_date, []).append(row)
+    return snapshots
+
+
+def _build_current_price_payload(snapshots: "OrderedDict[str, List[Dict]]") -> Dict:
+    if len(snapshots) < 2:
+        raise ValueError("Not enough distinct ASB price snapshots were found to compute changes")
+
+    snapshot_dates = list(snapshots.keys())
+    latest_date = snapshot_dates[-1]
+    previous_date = snapshot_dates[-2]
+    latest_rows = {row["scheme"]: row for row in snapshots[latest_date]}
+    previous_rows = {row["scheme"]: row for row in snapshots[previous_date]}
+
+    funds = []
+    for scheme in sorted(latest_rows):
+        latest_price = float(latest_rows[scheme]["unit_price"])
+        previous_price = float(previous_rows.get(scheme, latest_rows[scheme])["unit_price"])
+        unit_change = round(latest_price - previous_price, 6)
+        percent_change = round((unit_change / previous_price) * 100, 4) if previous_price else 0.0
+        funds.append(
+            {
+                "scheme": scheme,
+                "current_unit_price": latest_price,
+                "previous_unit_price": previous_price,
+                "unit_change": unit_change,
+                "percent_change": percent_change,
+            }
+        )
+
+    return {
+        "provider": crawler.provider,
+        "latest_price_date": latest_date,
+        "previous_price_date": previous_date,
+        "funds": funds,
+    }
+
+
+def _db_snapshot_fallback() -> Dict | None:
+    rows = fetch_prices(crawler.provider)
+    snapshots = _group_snapshots(rows)
+    if len(snapshots) < 2:
+        return None
+    payload = _build_current_price_payload(snapshots)
+    payload["source"] = "db_fallback"
+    payload["warning"] = "Live ASB fetch failed; showing the latest stored database snapshots."
+    return payload
+
+
 def _fetch_unique_history_rows(start: date, end: date) -> List[Dict]:
     """
     ASB serves the latest available snapshot for weekends and future dates.
@@ -98,10 +151,18 @@ def ensure_history(start: date, end: date, min_points: int = 2):
         return existing
 
     for missing_start, missing_end in _missing_intervals(existing, start, end):
-        fetch_history(missing_start, missing_end, store=True)
+        try:
+            fetch_history(missing_start, missing_end, store=True)
+        except Exception:
+            if existing:
+                return existing
+            raise
 
     if len(existing) < min_points:
-        fetch_history(start, end, store=True)
+        try:
+            fetch_history(start, end, store=True)
+        except Exception:
+            return existing
 
     refreshed = fetch_prices(crawler.provider, start_date=start, end_date=end)
     return refreshed if refreshed else existing
@@ -248,44 +309,18 @@ def current_price_changes(lookback_days: int = 14, store: bool = True, end: date
 
     end_date = end or date.today()
     start_date = end_date - timedelta(days=lookback_days - 1)
-    rows = _fetch_unique_history_rows(start_date, end_date)
+    try:
+        rows = _fetch_unique_history_rows(start_date, end_date)
+        if store and rows:
+            insert_unit_prices(crawler.provider, rows)
 
-    if store and rows:
-        insert_unit_prices(crawler.provider, rows)
-
-    snapshots: "OrderedDict[str, List[Dict]]" = OrderedDict()
-    for row in rows:
-        snapshot_date = row["date"].isoformat() if isinstance(row["date"], date) else str(row["date"])
-        snapshots.setdefault(snapshot_date, []).append(row)
-
-    if len(snapshots) < 2:
-        raise ValueError("Not enough distinct ASB price snapshots were found to compute changes")
-
-    snapshot_dates = list(snapshots.keys())
-    latest_date = snapshot_dates[-1]
-    previous_date = snapshot_dates[-2]
-    latest_rows = {row["scheme"]: row for row in snapshots[latest_date]}
-    previous_rows = {row["scheme"]: row for row in snapshots[previous_date]}
-
-    funds = []
-    for scheme in sorted(latest_rows):
-        latest_price = float(latest_rows[scheme]["unit_price"])
-        previous_price = float(previous_rows.get(scheme, latest_rows[scheme])["unit_price"])
-        unit_change = round(latest_price - previous_price, 6)
-        percent_change = round((unit_change / previous_price) * 100, 4) if previous_price else 0.0
-        funds.append(
-            {
-                "scheme": scheme,
-                "current_unit_price": latest_price,
-                "previous_unit_price": previous_price,
-                "unit_change": unit_change,
-                "percent_change": percent_change,
-            }
-        )
-
-    return {
-        "provider": crawler.provider,
-        "latest_price_date": latest_date,
-        "previous_price_date": previous_date,
-        "funds": funds,
-    }
+        snapshots = _group_snapshots(rows)
+        payload = _build_current_price_payload(snapshots)
+        payload["source"] = "live"
+        return payload
+    except Exception as exc:
+        fallback = _db_snapshot_fallback()
+        if fallback is not None:
+            fallback["warning_detail"] = str(exc)
+            return fallback
+        raise

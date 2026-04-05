@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Dict, List
 
 
@@ -22,6 +23,14 @@ TRACKED_SCHEMES: List[TrackedScheme] = [
         display_name="ANZ KiwiSaver Conservative Fund",
         risk_level="Conservative",
         color="#2563eb",
+    ),
+    TrackedScheme(
+        id="13",
+        provider="ANZ",
+        scheme="Cash Fund",
+        display_name="ANZ KiwiSaver Cash Fund",
+        risk_level="Cash",
+        color="#0f766e",
     ),
     TrackedScheme(
         id="2",
@@ -56,6 +65,14 @@ TRACKED_SCHEMES: List[TrackedScheme] = [
         color="#16a34a",
     ),
     TrackedScheme(
+        id="14",
+        provider="ASB",
+        scheme="NZ Cash Fund",
+        display_name="ASB KiwiSaver NZ Cash Fund",
+        risk_level="Cash",
+        color="#15803d",
+    ),
+    TrackedScheme(
         id="6",
         provider="ASB",
         scheme="Moderate Fund",
@@ -88,6 +105,14 @@ TRACKED_SCHEMES: List[TrackedScheme] = [
         color="#991b1b",
     ),
     TrackedScheme(
+        id="15",
+        provider="Westpac",
+        scheme="Cash Fund",
+        display_name="Westpac KiwiSaver Cash Fund",
+        risk_level="Cash",
+        color="#7f1d1d",
+    ),
+    TrackedScheme(
         id="10",
         provider="Westpac",
         scheme="Balanced Fund",
@@ -114,6 +139,54 @@ TRACKED_SCHEMES: List[TrackedScheme] = [
 ]
 
 TRACKED_SCHEMES_BY_ID: Dict[str, TrackedScheme] = {scheme.id: scheme for scheme in TRACKED_SCHEMES}
+TRACKED_SCHEMES_BY_NAME: Dict[str, TrackedScheme] = {
+    scheme.display_name: scheme for scheme in TRACKED_SCHEMES
+}
+TRACKED_SCHEME_NAME_ALIASES: Dict[str, str] = {
+    "ANZ Default KiwiSaver Scheme": "ANZ KiwiSaver Conservative Fund",
+    "ANZ KiwiSaver Balanced Growth": "ANZ KiwiSaver Balanced Growth Fund",
+    "ANZ KiwiSaver Growth": "ANZ KiwiSaver Growth Fund",
+    "ANZ Conservative Fund": "ANZ KiwiSaver Conservative Fund",
+    "ANZ Cash Fund": "ANZ KiwiSaver Cash Fund",
+    "ANZ Balanced Growth Fund": "ANZ KiwiSaver Balanced Growth Fund",
+    "ANZ Growth Fund": "ANZ KiwiSaver Growth Fund",
+    "ANZ High Growth Fund": "ANZ KiwiSaver High Growth Fund",
+    "ASB KiwiSaver Conservative": "ASB KiwiSaver Conservative Fund",
+    "ASB KiwiSaver NZ Cash": "ASB KiwiSaver NZ Cash Fund",
+    "ASB KiwiSaver Moderate": "ASB KiwiSaver Moderate Fund",
+    "ASB KiwiSaver Growth": "ASB KiwiSaver Growth Fund",
+    "ASB Conservative Fund": "ASB KiwiSaver Conservative Fund",
+    "ASB NZ Cash Fund": "ASB KiwiSaver NZ Cash Fund",
+    "ASB Cash Fund": "ASB KiwiSaver NZ Cash Fund",
+    "ASB Balanced Fund": "ASB KiwiSaver Moderate Fund",
+    "ASB KiwiSaver Balanced Fund": "ASB KiwiSaver Moderate Fund",
+    "ASB Moderate Fund": "ASB KiwiSaver Moderate Fund",
+    "ASB Growth Fund": "ASB KiwiSaver Growth Fund",
+    "ASB Aggressive Fund": "ASB KiwiSaver Aggressive Fund",
+    "Westpac KiwiSaver Conservative": "Westpac KiwiSaver Conservative Fund",
+    "Westpac KiwiSaver Cash": "Westpac KiwiSaver Cash Fund",
+    "Westpac KiwiSaver Balanced": "Westpac KiwiSaver Balanced Fund",
+    "Westpac KiwiSaver Growth": "Westpac KiwiSaver Growth Fund",
+    "Westpac Conservative Fund": "Westpac KiwiSaver Conservative Fund",
+    "Westpac Cash Fund": "Westpac KiwiSaver Cash Fund",
+    "Westpac Balanced Fund": "Westpac KiwiSaver Balanced Fund",
+    "Westpac Growth Fund": "Westpac KiwiSaver Growth Fund",
+    "Westpac High Growth Fund": "Westpac KiwiSaver High Growth Fund",
+}
+
+
+def _normalize_scheme_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+TRACKED_SCHEMES_BY_NORMALIZED_NAME: Dict[str, TrackedScheme] = {}
+for tracked_scheme in TRACKED_SCHEMES:
+    TRACKED_SCHEMES_BY_NORMALIZED_NAME[_normalize_scheme_name(tracked_scheme.display_name)] = tracked_scheme
+    TRACKED_SCHEMES_BY_NORMALIZED_NAME[_normalize_scheme_name(f"{tracked_scheme.provider} {tracked_scheme.scheme}")] = tracked_scheme
+for alias, canonical_name in TRACKED_SCHEME_NAME_ALIASES.items():
+    canonical_scheme = TRACKED_SCHEMES_BY_NAME.get(canonical_name)
+    if canonical_scheme is not None:
+        TRACKED_SCHEMES_BY_NORMALIZED_NAME[_normalize_scheme_name(alias)] = canonical_scheme
 
 
 def list_tracked_schemes(provider: str | None = None) -> List[TrackedScheme]:
@@ -140,3 +213,15 @@ def list_aggressive_tracked_schemes() -> List[TrackedScheme]:
     provider_order = {"ASB": 0, "ANZ": 1, "Westpac": 2}
     schemes = [scheme for scheme in TRACKED_SCHEMES if scheme.risk_level == "Aggressive"]
     return sorted(schemes, key=lambda scheme: provider_order.get(scheme.provider, 99))
+
+
+def get_tracked_scheme_by_id(scheme_id: str) -> TrackedScheme | None:
+    return TRACKED_SCHEMES_BY_ID.get(scheme_id)
+
+
+def get_tracked_scheme_by_name(display_name: str) -> TrackedScheme | None:
+    if display_name in TRACKED_SCHEME_NAME_ALIASES:
+        display_name = TRACKED_SCHEME_NAME_ALIASES[display_name]
+    return TRACKED_SCHEMES_BY_NAME.get(display_name) or TRACKED_SCHEMES_BY_NORMALIZED_NAME.get(
+        _normalize_scheme_name(display_name)
+    )

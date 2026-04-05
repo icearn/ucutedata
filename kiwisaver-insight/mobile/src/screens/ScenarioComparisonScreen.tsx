@@ -1,160 +1,133 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
-import { ScreenContainer } from '../components/ScreenContainer';
-import { Card } from '../components/Card';
-import { theme } from '../constants/theme';
-import { LineChart } from 'react-native-chart-kit';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserSettings } from '../types';
 import { Check, TrendingUp } from 'lucide-react-native';
+import { LineChart } from 'react-native-chart-kit';
 
-type ScenarioType = 'same' | 'worst' | 'normal' | 'best';
+import { Card } from '../components/Card';
+import { ScreenContainer } from '../components/ScreenContainer';
+import { theme } from '../constants/theme';
+import { fetchScenarioComparison } from '../services/api';
+import { ScenarioComparisonResponse, ScenarioResult, ScenarioType, UserSettings } from '../types';
 
-type ScenarioConfig = {
-  id: ScenarioType;
-  label: string;
-  description: string;
-  color: string;
-  returnRate: number;
-};
-
-const SCENARIO_CONFIGS: ScenarioConfig[] = [
-  {
-    id: 'same',
-    label: 'Stay with Same Scheme',
-    description: 'Continue with your current scheme',
-    color: '#3b82f6',
-    returnRate: 0.065,
-  },
-  {
-    id: 'worst',
-    label: 'Worst Choice Scheme',
-    description: 'Consistently choosing underperforming schemes',
-    color: '#ef4444',
-    returnRate: 0.03,
-  },
-  {
-    id: 'normal',
-    label: 'Normal Switch Scheme',
-    description: 'Periodic switches to average performers',
-    color: '#f59e0b',
-    returnRate: 0.055,
-  },
-  {
-    id: 'best',
-    label: 'Best Luck Jump Scheme',
-    description: 'Switching to top-performing schemes',
-    color: '#10b981',
-    returnRate: 0.085,
-  },
-];
+const CHART_WIDTH = Dimensions.get('window').width - 64;
 
 export const ScenarioComparisonScreen = () => {
   const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [selectedScenarios, setSelectedScenarios] = useState<ScenarioType[]>(['same']);
+  const [scenarioData, setScenarioData] = useState<ScenarioComparisonResponse | null>(null);
+  const [selectedScenarios, setSelectedScenarios] = useState<ScenarioType[]>(['same', 'best']);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const savedSettings = await AsyncStorage.getItem('userSettings');
-      if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+      if (!savedSettings) {
+        setError('User settings are not configured yet.');
+        return;
       }
-    } catch (e) {
-      console.error(e);
+
+      const parsedSettings = JSON.parse(savedSettings) as UserSettings;
+      const monthlyContribution =
+        (parsedSettings.personalContribution || 0) + (parsedSettings.companyContribution || 0);
+      const response = await fetchScenarioComparison(
+        parsedSettings.selectedScheme,
+        parsedSettings.initialFunds || 10000,
+        monthlyContribution,
+        parsedSettings.years || 10
+      );
+
+      setSettings(parsedSettings);
+      setScenarioData(response);
+
+      const availableIds = response.scenarios.map((scenario) => scenario.id);
+      setSelectedScenarios((current) => {
+        const kept = current.filter((scenarioId) => availableIds.includes(scenarioId));
+        if (kept.length > 0) {
+          return kept;
+        }
+        return availableIds.slice(0, Math.min(2, availableIds.length)) as ScenarioType[];
+      });
+    } catch (loadError) {
+      console.error(loadError);
+      setError('Failed to load scenario comparison data.');
     } finally {
       setLoading(false);
     }
   };
 
+  const scenarios = scenarioData?.scenarios ?? [];
+
   const toggleScenario = (scenarioId: ScenarioType) => {
     if (selectedScenarios.includes(scenarioId)) {
       if (selectedScenarios.length > 1) {
-        setSelectedScenarios(selectedScenarios.filter(id => id !== scenarioId));
+        setSelectedScenarios(selectedScenarios.filter((id) => id !== scenarioId));
       }
-    } else {
-      setSelectedScenarios([...selectedScenarios, scenarioId]);
+      return;
     }
+    setSelectedScenarios([...selectedScenarios, scenarioId]);
   };
 
+  const selectedScenarioResults = useMemo(
+    () => scenarios.filter((scenario) => selectedScenarios.includes(scenario.id)),
+    [scenarios, selectedScenarios]
+  );
+
   const chartData = useMemo(() => {
-    if (!settings) return null;
-
-    const labels: string[] = [];
-    const datasets: { data: number[], color: (opacity: number) => string, strokeWidth: number }[] = [];
-    const monthlyContribution = settings.personalContribution + settings.companyContribution;
-
-    // Generate labels (years) - simplify to every 5 years to avoid clutter
-    for (let year = 0; year <= settings.years; year += 5) {
-      labels.push(year.toString());
+    if (!settings || selectedScenarioResults.length === 0) {
+      return null;
     }
-    if (settings.years % 5 !== 0) labels.push(settings.years.toString());
 
-    selectedScenarios.forEach(scenarioId => {
-      const scenario = SCENARIO_CONFIGS.find(s => s.id === scenarioId);
-      if (!scenario) return;
-
-      const data: number[] = [];
-      for (let year = 0; year <= settings.years; year += 5) { // Match labels
-         let balance = settings.initialFunds;
-         const monthlyRate = scenario.returnRate / 12;
-         const months = year * 12;
-
-         for (let month = 1; month <= months; month++) {
-           balance = balance * (1 + monthlyRate) + monthlyContribution;
-         }
-         data.push(balance);
+    const interval = Math.max(1, Math.round(settings.years / 5));
+    const labels = selectedScenarioResults[0].projection.map((point) => {
+      if (point.year === 0 || point.year === settings.years || point.year % interval === 0) {
+        return point.year.toString();
       }
-      // Add final year if needed
-      if (settings.years % 5 !== 0) {
-          let balance = settings.initialFunds;
-          const monthlyRate = scenario.returnRate / 12;
-          const months = settings.years * 12;
-          for (let month = 1; month <= months; month++) {
-             balance = balance * (1 + monthlyRate) + monthlyContribution;
-          }
-          data.push(balance);
-      }
-
-      datasets.push({
-        data,
-        color: (opacity = 1) => scenario.color,
-        strokeWidth: 2
-      });
+      return '';
     });
 
-    return { labels, datasets };
-  }, [settings, selectedScenarios]);
+    return {
+      labels,
+      datasets: selectedScenarioResults.map((scenario) => ({
+        data: scenario.projection.map((point) => point.balance),
+        color: () => scenario.color,
+        strokeWidth: 2,
+      })),
+      legend: selectedScenarioResults.map((scenario) => scenario.label),
+    };
+  }, [selectedScenarioResults, settings]);
 
-  const finalValues = useMemo(() => {
-    if (!settings) return {};
-    const values: Record<string, number> = {};
-    const monthlyContribution = settings.personalContribution + settings.companyContribution;
-
-    selectedScenarios.forEach(scenarioId => {
-      const scenario = SCENARIO_CONFIGS.find(s => s.id === scenarioId);
-      if (!scenario) return;
-
-      let balance = settings.initialFunds;
-      const monthlyRate = scenario.returnRate / 12;
-      const months = settings.years * 12;
-
-      for (let month = 1; month <= months; month++) {
-        balance = balance * (1 + monthlyRate) + monthlyContribution;
-      }
-      values[scenario.label] = Math.round(balance);
-    });
-    return values;
-  }, [settings, selectedScenarios]);
-
-  if (loading || !settings) {
+  if (loading) {
     return (
       <ScreenContainer>
-        <Text>Loading...</Text>
+        <View style={styles.centered}>
+          <ActivityIndicator color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading real scenario data...</Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  if (!settings || !scenarioData || error) {
+    return (
+      <ScreenContainer>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>{error ?? 'No scenario data available.'}</Text>
+        </View>
       </ScreenContainer>
     );
   }
@@ -164,16 +137,27 @@ export const ScenarioComparisonScreen = () => {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Text style={theme.typography.h2}>Investment Scenarios</Text>
-          <Text style={theme.typography.caption}>Compare different investment strategies</Text>
+          <Text style={theme.typography.caption}>
+            Projections are calibrated from up to 10 years of real provider history.
+          </Text>
+        </View>
+
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Selected baseline</Text>
+          <Text style={styles.infoValue}>{scenarioData.selected_scheme?.name ?? settings.selectedScheme}</Text>
+          <Text style={styles.infoHelp}>
+            Backtest calibration used {scenarioData.scenario_backtest_window?.max_actual_years_used ?? 0} years of
+            live history.
+          </Text>
         </View>
 
         <View style={styles.scenariosContainer}>
-          {SCENARIO_CONFIGS.map(scenario => (
+          {scenarios.map((scenario) => (
             <TouchableOpacity
               key={scenario.id}
               style={[
                 styles.scenarioButton,
-                selectedScenarios.includes(scenario.id) && styles.scenarioButtonSelected
+                selectedScenarios.includes(scenario.id) && styles.scenarioButtonSelected,
               ]}
               onPress={() => toggleScenario(scenario.id)}
             >
@@ -185,7 +169,11 @@ export const ScenarioComparisonScreen = () => {
                 )}
               </View>
               <Text style={styles.scenarioDesc}>{scenario.description}</Text>
-              <Text style={styles.scenarioRate}>Est. return: {(scenario.returnRate * 100).toFixed(1)}%</Text>
+              <Text style={styles.scenarioMeta}>Source scheme: {scenario.source_scheme.name}</Text>
+              <Text style={styles.scenarioMeta}>
+                Model return {((scenario.model.annualized_return ?? 0) * 100).toFixed(2)}% / volatility{' '}
+                {((scenario.model.annualized_volatility ?? 0) * 100).toFixed(2)}%
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -198,38 +186,56 @@ export const ScenarioComparisonScreen = () => {
           {chartData && (
             <LineChart
               data={chartData}
-              width={Dimensions.get("window").width - 64}
+              width={CHART_WIDTH}
               height={220}
               yAxisLabel="$"
-              yAxisSuffix=""
               chartConfig={{
                 backgroundColor: theme.colors.card,
                 backgroundGradientFrom: theme.colors.card,
                 backgroundGradientTo: theme.colors.card,
                 decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
                 labelColor: (opacity = 1) => `rgba(30, 41, 59, ${opacity})`,
                 style: { borderRadius: 16 },
-                propsForDots: { r: "0" },
+                propsForDots: { r: '0' },
               }}
               bezier
-              style={{ marginVertical: 8, borderRadius: 16 }}
-              formatYLabel={(y) => (Number(y) / 1000).toFixed(0) + 'k'}
+              style={styles.chart}
+              formatYLabel={(value) => `${Math.round(Number(value) / 1000)}k`}
             />
           )}
         </Card>
 
         <View style={styles.summaryContainer}>
           <Text style={theme.typography.h3}>Final Values ({settings.years} years)</Text>
-          {SCENARIO_CONFIGS.filter(s => selectedScenarios.includes(s.id)).map(scenario => (
+          {selectedScenarioResults.map((scenario) => (
             <View key={scenario.id} style={styles.summaryRow}>
               <View style={styles.summaryLabelRow}>
                 <View style={[styles.colorDot, { backgroundColor: scenario.color }]} />
-                <Text style={styles.summaryLabel}>{scenario.label}</Text>
+                <View>
+                  <Text style={styles.summaryLabel}>{scenario.label}</Text>
+                  <Text style={styles.summarySubLabel}>{scenario.source_scheme.provider}</Text>
+                </View>
               </View>
-              <Text style={styles.summaryValue}>
-                ${finalValues[scenario.label]?.toLocaleString()}
-              </Text>
+              <View style={styles.summaryValues}>
+                <Text style={styles.summaryValue}>${scenario.final_value.toLocaleString()}</Text>
+                <Text style={styles.summaryReturn}>Return ${scenario.total_return.toLocaleString()}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.backtestContainer}>
+          <Text style={theme.typography.h3}>Calibration Windows</Text>
+          {selectedScenarioResults.map((scenario: ScenarioResult) => (
+            <View key={`${scenario.id}-backtest`} style={styles.backtestRow}>
+              <View>
+                <Text style={styles.backtestLabel}>{scenario.label}</Text>
+                <Text style={styles.backtestSubLabel}>
+                  {scenario.backtest.start_date} to {scenario.backtest.end_date}
+                </Text>
+              </View>
+              <Text style={styles.backtestValue}>{scenario.backtest.source_months} months</Text>
             </View>
           ))}
         </View>
@@ -245,6 +251,39 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: theme.spacing.l,
   },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.s,
+  },
+  loadingText: {
+    ...theme.typography.caption,
+  },
+  errorText: {
+    ...theme.typography.body,
+    color: '#b91c1c',
+  },
+  infoCard: {
+    marginBottom: theme.spacing.l,
+    padding: theme.spacing.m,
+    backgroundColor: '#eff6ff',
+    borderRadius: theme.borderRadius.m,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  infoLabel: {
+    ...theme.typography.caption,
+    color: '#1d4ed8',
+  },
+  infoValue: {
+    ...theme.typography.h3,
+    marginTop: 4,
+  },
+  infoHelp: {
+    ...theme.typography.caption,
+    marginTop: 6,
+  },
   scenariosContainer: {
     marginBottom: theme.spacing.l,
     gap: theme.spacing.s,
@@ -257,7 +296,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   scenarioButtonSelected: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#eff6ff',
     borderColor: theme.colors.primary,
   },
   scenarioHeader: {
@@ -280,10 +319,10 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     marginBottom: 4,
   },
-  scenarioRate: {
+  scenarioMeta: {
     ...theme.typography.caption,
-    color: theme.colors.primary,
-    fontWeight: '500',
+    color: '#1d4ed8',
+    marginTop: 2,
   },
   chartHeader: {
     flexDirection: 'row',
@@ -294,13 +333,17 @@ const styles = StyleSheet.create({
   chartTitle: {
     ...theme.typography.h3,
   },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
   summaryContainer: {
     marginTop: theme.spacing.l,
     padding: theme.spacing.m,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#f0f9ff',
     borderRadius: theme.borderRadius.m,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#bae6fd',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -311,12 +354,51 @@ const styles = StyleSheet.create({
   summaryLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   summaryLabel: {
     ...theme.typography.body,
   },
+  summarySubLabel: {
+    ...theme.typography.caption,
+  },
+  summaryValues: {
+    alignItems: 'flex-end',
+  },
   summaryValue: {
     ...theme.typography.body,
     fontWeight: 'bold',
+  },
+  summaryReturn: {
+    ...theme.typography.caption,
+    color: theme.colors.success,
+  },
+  backtestContainer: {
+    marginTop: theme.spacing.l,
+    padding: theme.spacing.m,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.m,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  backtestRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.s,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  backtestLabel: {
+    ...theme.typography.body,
+    fontWeight: '500',
+  },
+  backtestSubLabel: {
+    ...theme.typography.caption,
+  },
+  backtestValue: {
+    ...theme.typography.body,
+    fontWeight: '600',
+    color: theme.colors.primary,
   },
 });

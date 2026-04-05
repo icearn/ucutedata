@@ -16,12 +16,17 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 
 const LEGACY_SCHEME_NAME_ALIASES: Record<string, string> = {
   'ANZ Default KiwiSaver Scheme': 'ANZ KiwiSaver Conservative Fund',
+  'ANZ Cash Fund': 'ANZ KiwiSaver Cash Fund',
   'ANZ KiwiSaver Balanced Growth': 'ANZ KiwiSaver Balanced Growth Fund',
   'ANZ KiwiSaver Growth': 'ANZ KiwiSaver Growth Fund',
   'ASB KiwiSaver Conservative': 'ASB KiwiSaver Conservative Fund',
+  'ASB KiwiSaver NZ Cash': 'ASB KiwiSaver NZ Cash Fund',
+  'ASB NZ Cash Fund': 'ASB KiwiSaver NZ Cash Fund',
   'ASB KiwiSaver Moderate': 'ASB KiwiSaver Moderate Fund',
   'ASB KiwiSaver Growth': 'ASB KiwiSaver Growth Fund',
   'Westpac KiwiSaver Conservative': 'Westpac KiwiSaver Conservative Fund',
+  'Westpac KiwiSaver Cash': 'Westpac KiwiSaver Cash Fund',
+  'Westpac Cash Fund': 'Westpac KiwiSaver Cash Fund',
   'Westpac KiwiSaver Balanced': 'Westpac KiwiSaver Balanced Fund',
   'Westpac KiwiSaver Growth': 'Westpac KiwiSaver Growth Fund',
 };

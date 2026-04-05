@@ -28,6 +28,10 @@ from kiwisaver_insight.services.aggressive_funds_service import (
     list_aggressive_schemes,
 )
 from kiwisaver_insight.services.verification_service import verify_live_sources_against_db
+from kiwisaver_insight.services.strategy_recommendation_service import (
+    build_strategy_recommendation,
+    get_latest_strategy_recommendation,
+)
 from kiwisaver_insight.utils.db import ensure_runtime_schema, insert_unit_prices, list_schemes
 
 API_DESCRIPTION = """
@@ -266,11 +270,10 @@ def save_user_profile(profile: UserProfile):
 
 
 from kiwisaver_insight.services.analysis_service import (
-    generate_unit_price_history,
-    calculate_outcome,
+    build_current_scheme_analysis,
+    build_scenario_comparison,
     simulate_strategy,
     SwitchCondition,
-    AVAILABLE_SCHEMES
 )
 
 # ... (keep existing imports)
@@ -283,27 +286,32 @@ class CurrentSchemeRequest(BaseModel):
     initial_funds: float
     monthly_contribution: float
 
+
+class ScenarioComparisonRequest(BaseModel):
+    selected_scheme: str
+    initial_funds: float
+    monthly_contribution: float
+    years: int
+
+
 @app.post("/api/analysis/current-scheme")
 def api_current_scheme_analysis(req: CurrentSchemeRequest):
-    results = []
-    # Get scheme details for response
-    schemes_map = {s.id: s for s in AVAILABLE_SCHEMES}
-    
-    for scheme_id in req.scheme_ids:
-        scheme = schemes_map.get(scheme_id)
-        if not scheme:
-            continue
-            
-        history = generate_unit_price_history(scheme_id, req.years)
-        outcome = calculate_outcome(history, req.initial_funds, req.monthly_contribution)
-        
-        results.append({
-            "scheme": scheme.model_dump(),
-            "history": history,
-            "outcome": outcome
-        })
-        
-    return {"results": results}
+    return build_current_scheme_analysis(
+        req.scheme_ids,
+        req.years,
+        req.initial_funds,
+        req.monthly_contribution,
+    )
+
+
+@app.post("/api/scenarios/compare")
+def api_scenario_comparison(req: ScenarioComparisonRequest):
+    return build_scenario_comparison(
+        req.selected_scheme,
+        req.initial_funds,
+        req.monthly_contribution,
+        req.years,
+    )
 
 
 class StrategyBacktestRequest(BaseModel):
@@ -311,14 +319,58 @@ class StrategyBacktestRequest(BaseModel):
     initial_funds: float
     monthly_contribution: float
     years: int = 10
+    selected_scheme: Optional[str] = None
+
+
+class StrategyRecommendationRequest(BaseModel):
+    selected_scheme: str
+    initial_funds: float
+    monthly_contribution: float
+    years: int = 10
+    user_id: Optional[str] = None
+    risk_preference: Optional[str] = None
+    objective: Optional[str] = None
+    persist: bool = True
 
 @app.post("/api/strategy/backtest")
 def api_strategy_backtest(req: StrategyBacktestRequest):
-    simulation = simulate_strategy(
-        req.conditions, 
-        req.initial_funds, 
-        req.monthly_contribution, 
-        req.years
-    )
-    
+    try:
+        simulation = simulate_strategy(
+            req.conditions,
+            req.initial_funds,
+            req.monthly_contribution,
+            req.years,
+            req.selected_scheme,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return simulation
+
+
+@app.post("/api/strategy/recommendation")
+def api_strategy_recommendation(req: StrategyRecommendationRequest):
+    try:
+        return build_strategy_recommendation(
+            selected_scheme=req.selected_scheme,
+            initial_funds=req.initial_funds,
+            monthly_contribution=req.monthly_contribution,
+            years=req.years,
+            user_id=req.user_id,
+            risk_preference=req.risk_preference,
+            objective=req.objective,
+            persist=req.persist,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/strategy/recommendation/latest")
+def api_latest_strategy_recommendation(
+    user_id: str = Query(...),
+    selected_scheme: Optional[str] = Query(None),
+):
+    recommendation = get_latest_strategy_recommendation(user_id=user_id, selected_scheme=selected_scheme)
+    if recommendation is None:
+        raise HTTPException(status_code=404, detail="No saved strategy recommendation found")
+    return recommendation

@@ -33,6 +33,8 @@ type CurrentPricesResponse = {
   latest_price_date: string;
   previous_price_date: string;
   funds: CurrentPriceFund[];
+  source?: 'live' | 'db_fallback';
+  warning?: string;
 };
 
 type TrendPoint = {
@@ -335,6 +337,11 @@ export const HistoricalPricesScreen = () => {
             <Text style={styles.summarySubtext}>
               Previous snapshot: {currentData.previous_price_date} | Provider: {currentData.provider}
             </Text>
+            {currentData.warning ? (
+              <Text style={styles.warningText}>
+                {currentData.warning}
+              </Text>
+            ) : null}
           </Card>
         ) : null}
 
@@ -836,5 +843,10 @@ const styles = StyleSheet.create({
   errorText: {
     color: theme.colors.danger,
     marginTop: theme.spacing.m,
+  },
+  warningText: {
+    ...theme.typography.caption,
+    color: theme.colors.warning,
+    marginTop: 8,
   },
 });
