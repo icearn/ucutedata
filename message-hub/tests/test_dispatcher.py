@@ -39,3 +39,23 @@ def test_email_dispatch_requires_smtp(monkeypatch):
     results = dispatcher.dispatch_message(message)
 
     assert results[0]["status"] == "not_configured"
+
+
+def test_dispatch_message_captures_channel_errors_and_continues(monkeypatch):
+    monkeypatch.setattr(dispatcher, "_resolve_channels", lambda _: ["slack", "console"])
+    monkeypatch.setattr(dispatcher, "_dispatch_slack", lambda message: (_ for _ in ()).throw(RuntimeError("slack down")))
+
+    message = NotificationMessage(
+        source_app="kiwisaver-insight",
+        event_type="kiwisaver_price_alert",
+        channel="common_api",
+        title="Test alert",
+        body="Body",
+    )
+
+    results = dispatcher.dispatch_message(message)
+
+    assert results[0]["channel"] == "slack"
+    assert results[0]["status"] == "failed"
+    assert "slack down" in results[0]["response"]
+    assert results[1] == {"channel": "console", "status": "sent", "response": "Logged to stdout"}

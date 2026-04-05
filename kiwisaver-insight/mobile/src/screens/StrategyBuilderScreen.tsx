@@ -22,6 +22,7 @@ import {
   getLatestStrategyRecommendation,
   runStrategyBacktest,
 } from '../services/api';
+import { getOrCreateLocalUserId } from '../services/user';
 import {
   SimulationResult,
   StrategyRecommendationCandidate,
@@ -31,8 +32,6 @@ import {
 } from '../types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const STRATEGY_RECOMMENDATION_USER = 'strategy_local_user';
-
 const CONDITION_TYPES = [
   { type: 'price_drop', label: 'Price Drop Below', unit: '%' },
   { type: 'price_rise', label: 'Price Rise Above', unit: '%' },
@@ -67,17 +66,19 @@ export const StrategyBuilderScreen = () => {
   const [simulation, setSimulation] = useState<SimulationResult | null>(null);
   const [recommendation, setRecommendation] = useState<StrategyRecommendationResponse | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [localUserId, setLocalUserId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
+    void loadLocalUserId();
   }, []);
 
   useEffect(() => {
-    if (!userSettings?.selectedScheme) {
+    if (!userSettings?.selectedScheme || !localUserId) {
       return;
     }
-    void loadLatestRecommendation(userSettings.selectedScheme);
-  }, [userSettings?.selectedScheme]);
+    void loadLatestRecommendation(localUserId, userSettings.selectedScheme);
+  }, [localUserId, userSettings?.selectedScheme]);
 
   const requestedYears = Math.max(1, Math.min(userSettings?.years ?? 10, 10));
   const monthlyContribution =
@@ -127,9 +128,19 @@ export const StrategyBuilderScreen = () => {
     }
   };
 
-  const loadLatestRecommendation = async (selectedScheme: string) => {
+  const loadLocalUserId = async () => {
     try {
-      const latest = await getLatestStrategyRecommendation(STRATEGY_RECOMMENDATION_USER, selectedScheme);
+      const userId = await getOrCreateLocalUserId();
+      setLocalUserId(userId);
+    } catch (error) {
+      console.error('Failed to initialize local user profile', error);
+      setRecommendationError('Local user profile could not be initialized.');
+    }
+  };
+
+  const loadLatestRecommendation = async (userId: string, selectedScheme: string) => {
+    try {
+      const latest = await getLatestStrategyRecommendation(userId, selectedScheme);
       setRecommendation(latest);
       setRecommendationError(null);
     } catch (error: any) {
@@ -198,6 +209,10 @@ export const StrategyBuilderScreen = () => {
       Alert.alert('Settings required', 'Please configure your scheme and contribution settings first.');
       return;
     }
+    if (!localUserId) {
+      Alert.alert('User profile loading', 'Please wait until your local user profile is ready.');
+      return;
+    }
 
     setRecommendationLoading(true);
     try {
@@ -206,7 +221,7 @@ export const StrategyBuilderScreen = () => {
         initial_funds: userSettings.initialFunds || 10000,
         monthly_contribution: monthlyContribution,
         years: requestedYears,
-        user_id: STRATEGY_RECOMMENDATION_USER,
+        user_id: localUserId,
         persist: true,
       });
       setRecommendation(response);

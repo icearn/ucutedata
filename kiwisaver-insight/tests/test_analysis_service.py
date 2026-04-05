@@ -70,3 +70,44 @@ def test_simulate_strategy_supports_cash_start_scheme(monkeypatch):
     assert result["start_scheme"]["type"] == "Cash"
     assert result["actual_window"]["provider"] == "ANZ"
     assert len(result["data"]) == 3
+
+
+def test_build_current_scheme_analysis_raises_when_history_refresh_fails(monkeypatch):
+    monkeypatch.setattr(
+        analysis_service,
+        "_prime_selected_histories",
+        lambda scheme_ids, start_date, end_date: {"1": RuntimeError("ANZ source unavailable")},
+    )
+    monkeypatch.setattr(analysis_service, "_load_scheme_history", lambda scheme_id, start_date, end_date: [])
+
+    try:
+        analysis_service.build_current_scheme_analysis(
+            scheme_ids=["1"],
+            years=1,
+            initial_funds=10000,
+            monthly_contribution=500,
+        )
+        raise AssertionError("Expected AnalysisDataUnavailableError")
+    except analysis_service.AnalysisDataUnavailableError as exc:
+        assert "ANZ source unavailable" in str(exc)
+
+
+def test_simulate_strategy_raises_when_start_history_is_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        analysis_service,
+        "_prime_selected_histories",
+        lambda scheme_ids, start_date, end_date: {"1": RuntimeError("ASB source unavailable")},
+    )
+    monkeypatch.setattr(analysis_service, "_load_scheme_history", lambda scheme_id, start_date, end_date: [])
+
+    try:
+        analysis_service.simulate_strategy(
+            conditions=[],
+            initial_funds=10000,
+            monthly_contribution=250,
+            years=1,
+            selected_scheme="ANZ KiwiSaver Conservative Fund",
+        )
+        raise AssertionError("Expected AnalysisDataUnavailableError")
+    except analysis_service.AnalysisDataUnavailableError as exc:
+        assert "Not enough historical data" in str(exc) or "source unavailable" in str(exc)

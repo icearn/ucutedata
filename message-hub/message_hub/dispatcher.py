@@ -13,20 +13,29 @@ from message_hub.models import NotificationMessage
 def dispatch_message(message: NotificationMessage) -> list[dict]:
     results = []
     for channel in _resolve_channels(message.channel):
-        if channel == "console":
-            results.append(_dispatch_console(message))
-        elif channel == "slack":
-            results.append(_dispatch_slack(message))
-        elif channel == "email":
-            results.append(_dispatch_email(message))
-        elif channel in {"sms", "whatsapp", "im", "webhook"}:
-            results.append(_dispatch_webhook(channel, message))
-        else:
+        try:
+            if channel == "console":
+                results.append(_dispatch_console(message))
+            elif channel == "slack":
+                results.append(_dispatch_slack(message))
+            elif channel == "email":
+                results.append(_dispatch_email(message))
+            elif channel in {"sms", "whatsapp", "im", "webhook"}:
+                results.append(_dispatch_webhook(channel, message))
+            else:
+                results.append(
+                    {
+                        "channel": channel,
+                        "status": "unsupported",
+                        "response": f"Unsupported channel: {channel}",
+                    }
+                )
+        except Exception as exc:
             results.append(
                 {
                     "channel": channel,
-                    "status": "unsupported",
-                    "response": f"Unsupported channel: {channel}",
+                    "status": "failed",
+                    "response": str(exc),
                 }
             )
     return results

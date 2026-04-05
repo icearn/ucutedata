@@ -6,12 +6,17 @@ const mockGetCurrentPrices = jest.fn();
 const mockGetTrends = jest.fn();
 const mockGetAlertRules = jest.fn();
 const mockCreateAlertRule = jest.fn();
+const mockGetOrCreateLocalUserId = jest.fn();
 
 jest.mock('../../services/api', () => ({
   getProviderCurrentPrices: (...args: any[]) => mockGetCurrentPrices(...args),
   getProviderTrends: (...args: any[]) => mockGetTrends(...args),
   getAlertRules: (...args: any[]) => mockGetAlertRules(...args),
   createAlertRule: (...args: any[]) => mockCreateAlertRule(...args),
+}));
+
+jest.mock('../../services/user', () => ({
+  getOrCreateLocalUserId: (...args: any[]) => mockGetOrCreateLocalUserId(...args),
 }));
 
 jest.mock('lucide-react-native', () => ({
@@ -106,6 +111,7 @@ describe('HistoricalPricesScreen', () => {
     );
 
     mockGetAlertRules.mockResolvedValue({ rules: [] });
+    mockGetOrCreateLocalUserId.mockResolvedValue('local-user-1');
     mockCreateAlertRule.mockResolvedValue({
       id: 1,
       provider: 'ASB',
@@ -238,7 +244,7 @@ describe('HistoricalPricesScreen', () => {
     const { getByText, getByPlaceholderText, findByText } = render(<HistoricalPricesScreen />);
 
     await waitFor(() => {
-      expect(mockGetAlertRules).toHaveBeenCalledWith('user_123', true);
+      expect(mockGetAlertRules).toHaveBeenCalledWith('local-user-1', true);
     });
 
     fireEvent.changeText(getByPlaceholderText('e.g. 1.2500'), '1.4');
@@ -246,7 +252,7 @@ describe('HistoricalPricesScreen', () => {
 
     await waitFor(() => {
       expect(mockCreateAlertRule).toHaveBeenCalledWith({
-        user_id: 'user_123',
+        user_id: 'local-user-1',
         provider: 'ASB',
         scheme: 'Aggressive Fund',
         metric: 'unit_price',

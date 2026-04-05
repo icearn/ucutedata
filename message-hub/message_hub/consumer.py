@@ -37,18 +37,30 @@ def consume_forever(stop_event: Event):
             records = consumer.poll(timeout_ms=settings.consumer_poll_ms)
             for partition_records in records.values():
                 for record in partition_records:
-                    message = NotificationMessage.model_validate(record.value)
-                    results = dispatch_message(message)
-                    print(
-                        "[message-hub] delivery results",
-                        json.dumps(
-                            {
-                                "message_id": message.message_id,
-                                "source_app": message.source_app,
-                                "results": results,
-                            }
-                        ),
-                        flush=True,
-                    )
+                    try:
+                        message = NotificationMessage.model_validate(record.value)
+                        results = dispatch_message(message)
+                        print(
+                            "[message-hub] delivery results",
+                            json.dumps(
+                                {
+                                    "message_id": message.message_id,
+                                    "source_app": message.source_app,
+                                    "results": results,
+                                }
+                            ),
+                            flush=True,
+                        )
+                    except Exception as exc:
+                        print(
+                            "[message-hub] delivery failed",
+                            json.dumps(
+                                {
+                                    "error": str(exc),
+                                    "raw_value": record.value,
+                                }
+                            ),
+                            flush=True,
+                        )
     finally:
         consumer.close()

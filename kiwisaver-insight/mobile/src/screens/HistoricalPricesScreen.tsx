@@ -24,6 +24,7 @@ import {
   getProviderCurrentPrices,
   getProviderTrends,
 } from '../services/api';
+import { getOrCreateLocalUserId } from '../services/user';
 
 type Period = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
@@ -76,8 +77,6 @@ const PERIOD_DAYS: Record<Period, number> = {
 };
 
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
-const ALERT_USER_ID = 'user_123';
-
 const subtractDays = (value: string, days: number) => {
   const next = new Date(value);
   next.setDate(next.getDate() - days);
@@ -262,6 +261,7 @@ export const HistoricalPricesScreen = () => {
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [savingAlert, setSavingAlert] = useState(false);
   const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
+  const [localUserId, setLocalUserId] = useState<string | null>(null);
 
   const selectedFund = useMemo(
     () => currentData?.funds.find((fund) => fund.scheme === selectedScheme) ?? null,
@@ -330,9 +330,9 @@ export const HistoricalPricesScreen = () => {
     }
   };
 
-  const loadAlertRules = async () => {
+  const loadAlertRules = async (userId: string) => {
     try {
-      const response = await getAlertRules(ALERT_USER_ID, true);
+      const response = await getAlertRules(userId, true);
       setAlertRules(response.rules ?? []);
     } catch (err) {
       setAlertFeedback('Alert rules could not be refreshed right now.');
@@ -344,8 +344,35 @@ export const HistoricalPricesScreen = () => {
   }, [selectedProvider]);
 
   useEffect(() => {
-    loadAlertRules();
+    let active = true;
+
+    const initialiseLocalUser = async () => {
+      try {
+        const userId = await getOrCreateLocalUserId();
+        if (!active) {
+          return;
+        }
+        setLocalUserId(userId);
+      } catch (err) {
+        if (active) {
+          setAlertFeedback('Local user profile could not be initialized.');
+        }
+      }
+    };
+
+    initialiseLocalUser();
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!localUserId) {
+      return;
+    }
+    loadAlertRules(localUserId);
+  }, [localUserId]);
 
   useEffect(() => {
     let active = true;
@@ -420,6 +447,10 @@ export const HistoricalPricesScreen = () => {
       setAlertFeedback('Select a fund before creating an alert.');
       return;
     }
+    if (!localUserId) {
+      setAlertFeedback('Local user profile is still loading. Try again in a moment.');
+      return;
+    }
 
     const parsedTarget = Number(alertTarget);
     if (!Number.isFinite(parsedTarget)) {
@@ -430,7 +461,7 @@ export const HistoricalPricesScreen = () => {
     setSavingAlert(true);
     try {
       await createAlertRule({
-        user_id: ALERT_USER_ID,
+        user_id: localUserId,
         provider: currentData.provider,
         scheme: selectedFund.scheme,
         metric: alertMetric,
@@ -439,7 +470,7 @@ export const HistoricalPricesScreen = () => {
         channel: 'common_api',
         trigger_once: true,
       });
-      await loadAlertRules();
+      await loadAlertRules(localUserId);
       setAlertTarget('');
       setAlertFeedback(
         `${selectedFund.scheme} alert created: ${alertComparison === 'gte' ? '>=' : alertComparison === 'lte' ? '<=' : '='} ${parsedTarget}`

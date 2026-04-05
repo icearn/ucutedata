@@ -321,6 +321,7 @@ def save_user_profile(profile: UserProfile):
 
 
 from kiwisaver_insight.services.analysis_service import (
+    AnalysisDataUnavailableError,
     build_current_scheme_analysis,
     build_scenario_comparison,
     simulate_strategy,
@@ -347,22 +348,28 @@ class ScenarioComparisonRequest(BaseModel):
 
 @app.post("/api/analysis/current-scheme")
 def api_current_scheme_analysis(req: CurrentSchemeRequest):
-    return build_current_scheme_analysis(
-        req.scheme_ids,
-        req.years,
-        req.initial_funds,
-        req.monthly_contribution,
-    )
+    try:
+        return build_current_scheme_analysis(
+            req.scheme_ids,
+            req.years,
+            req.initial_funds,
+            req.monthly_contribution,
+        )
+    except AnalysisDataUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/scenarios/compare")
 def api_scenario_comparison(req: ScenarioComparisonRequest):
-    return build_scenario_comparison(
-        req.selected_scheme,
-        req.initial_funds,
-        req.monthly_contribution,
-        req.years,
-    )
+    try:
+        return build_scenario_comparison(
+            req.selected_scheme,
+            req.initial_funds,
+            req.monthly_contribution,
+            req.years,
+        )
+    except AnalysisDataUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 class StrategyBacktestRequest(BaseModel):
@@ -393,6 +400,8 @@ def api_strategy_backtest(req: StrategyBacktestRequest):
             req.years,
             req.selected_scheme,
         )
+    except AnalysisDataUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -412,6 +421,8 @@ def api_strategy_recommendation(req: StrategyRecommendationRequest):
             objective=req.objective,
             persist=req.persist,
         )
+    except AnalysisDataUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

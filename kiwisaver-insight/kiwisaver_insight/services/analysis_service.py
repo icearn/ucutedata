@@ -76,10 +76,24 @@ SCENARIO_DEFINITIONS = {
 SCENARIO_ORDER = ["same", "worst", "normal", "best"]
 
 
+class AnalysisDataUnavailableError(RuntimeError):
+    pass
+
+
 def generate_unit_price_history(scheme_id: str, years: int) -> List[Dict[str, Any]]:
     start_date, end_date = _analysis_window(years)
-    _prime_selected_histories([scheme_id], start_date, end_date)
-    return _load_scheme_history(scheme_id, start_date, end_date)
+    priming_failures = _prime_selected_histories([scheme_id], start_date, end_date) or {}
+    history = _load_scheme_history(scheme_id, start_date, end_date)
+    tracked_scheme = TRACKED_SCHEMES_BY_ID.get(scheme_id)
+    if tracked_scheme and not history:
+        _raise_history_unavailable(
+            tracked_scheme=tracked_scheme,
+            start_date=start_date,
+            end_date=end_date,
+            failure=priming_failures.get(scheme_id),
+            minimum_points=1,
+        )
+    return history
 
 
 def build_current_scheme_analysis(
@@ -89,7 +103,7 @@ def build_current_scheme_analysis(
     monthly_contribution: float,
 ) -> Dict[str, Any]:
     start_date, end_date = _analysis_window(years)
-    _prime_selected_histories(list(scheme_ids), start_date, end_date)
+    priming_failures = _prime_selected_histories(list(scheme_ids), start_date, end_date) or {}
 
     schemes_map = {scheme.id: scheme for scheme in AVAILABLE_SCHEMES}
     results = []
@@ -99,6 +113,15 @@ def build_current_scheme_analysis(
             continue
 
         history = _load_scheme_history(scheme_id, start_date, end_date)
+        tracked_scheme = TRACKED_SCHEMES_BY_ID.get(scheme_id)
+        if tracked_scheme and not history:
+            _raise_history_unavailable(
+                tracked_scheme=tracked_scheme,
+                start_date=start_date,
+                end_date=end_date,
+                failure=priming_failures.get(scheme_id),
+                minimum_points=1,
+            )
         outcome = calculate_outcome(history, initial_funds, monthly_contribution)
         results.append(
             {
@@ -164,25 +187,25 @@ def build_scenario_comparison(
     years: int,
 ) -> Dict[str, Any]:
     tracked_schemes = list_tracked_schemes()
+    start_date, end_date = _analysis_window(min(years, BACKTEST_CALIBRATION_YEARS))
+    priming_failures = _prime_selected_histories([tracked_scheme.id for tracked_scheme in tracked_schemes], start_date, end_date) or {}
     scheme_profiles = [
         _build_scheme_profile(
             scheme_id=tracked_scheme.id,
             initial_funds=initial_funds,
             monthly_contribution=monthly_contribution,
             calibration_years=min(years, BACKTEST_CALIBRATION_YEARS),
+            prime_history=False,
+            priming_failures=priming_failures,
         )
         for tracked_scheme in tracked_schemes
     ]
     scheme_profiles = [profile for profile in scheme_profiles if profile is not None]
     if not scheme_profiles:
-        return {
-            "requested_years": years,
-            "selected_scheme": None,
-            "scenario_backtest_window": None,
-            "scenarios": [],
-            "best_scenario_id": None,
-            "future_projections": [],
-        }
+        first_failure = next(iter(priming_failures.values()), None)
+        if first_failure is not None:
+            raise AnalysisDataUnavailableError(f"Scenario comparison data refresh failed: {first_failure}")
+        raise AnalysisDataUnavailableError("Scenario comparison data is unavailable for the tracked KiwiSaver schemes.")
 
     selected_tracked_scheme = get_tracked_scheme_by_name(selected_scheme) or TRACKED_SCHEMES_BY_ID.get(
         scheme_profiles[0]["scheme"]["id"]
@@ -292,11 +315,11 @@ def simulate_strategy(
         raise ValueError(f"Strategy cannot run because {start_scheme.provider} is missing risk buckets: {', '.join(missing_types)}")
 
     start_date, end_date = _analysis_window(min(years, BACKTEST_CALIBRATION_YEARS))
-    _prime_selected_histories(
+    priming_failures = _prime_selected_histories(
         [provider_schemes[strategy_type].id for strategy_type in required_strategy_types],
         start_date,
         end_date,
-    )
+    ) or {}
 
     histories_by_type = {
         strategy_type: _load_scheme_history(provider_schemes[strategy_type].id, start_date, end_date)
@@ -304,16 +327,13 @@ def simulate_strategy(
     }
     histories_by_type = {key: value for key, value in histories_by_type.items() if len(value) >= 2}
     if start_strategy_type not in histories_by_type:
-        return {
-            "data": [],
-            "switches": [],
-            "final_balance": round(initial_funds),
-            "total_invested": round(initial_funds),
-            "actual_window": None,
-            "model": _projection_model_from_returns([], "Strategy Path"),
-            "future_projections": [],
-            "start_scheme": _scheme_payload(start_scheme),
-        }
+        _raise_history_unavailable(
+            tracked_scheme=provider_schemes[start_strategy_type],
+            start_date=start_date,
+            end_date=end_date,
+            failure=priming_failures.get(provider_schemes[start_strategy_type].id),
+            minimum_points=2,
+        )
 
     common_month_keys = sorted(
         set.intersection(
@@ -321,16 +341,9 @@ def simulate_strategy(
         )
     )
     if len(common_month_keys) < 2:
-        return {
-            "data": [],
-            "switches": [],
-            "final_balance": round(initial_funds),
-            "total_invested": round(initial_funds),
-            "actual_window": None,
-            "model": _projection_model_from_returns([], "Strategy Path"),
-            "future_projections": [],
-            "start_scheme": _scheme_payload(start_scheme),
-        }
+        raise AnalysisDataUnavailableError(
+            f"Not enough overlapping historical data is available to run the strategy for {start_scheme.display_name}."
+        )
 
     history_maps = {
         strategy_type: {point["date"][:7]: point for point in history if point["date"][:7] in common_month_keys}
@@ -452,15 +465,27 @@ def _build_scheme_profile(
     initial_funds: float,
     monthly_contribution: float,
     calibration_years: int,
+    prime_history: bool = True,
+    priming_failures: Dict[str, Exception] | None = None,
 ) -> Dict[str, Any] | None:
     tracked_scheme = TRACKED_SCHEMES_BY_ID.get(scheme_id)
     if not tracked_scheme:
         return None
 
     start_date, end_date = _analysis_window(min(calibration_years, BACKTEST_CALIBRATION_YEARS))
-    _prime_selected_histories([scheme_id], start_date, end_date)
+    failures = priming_failures or {}
+    if prime_history:
+        failures = _prime_selected_histories([scheme_id], start_date, end_date) or {}
     history = _load_scheme_history(scheme_id, start_date, end_date)
     if len(history) < 2:
+        if scheme_id in failures:
+            _raise_history_unavailable(
+                tracked_scheme=tracked_scheme,
+                start_date=start_date,
+                end_date=end_date,
+                failure=failures.get(scheme_id),
+                minimum_points=2,
+            )
         return None
 
     actual_series = _build_backtest_series_from_history(history, initial_funds, monthly_contribution)
@@ -661,31 +686,38 @@ def _analysis_window(years: int) -> tuple[date, date]:
     return start_date, end_date
 
 
-def _prime_selected_histories(scheme_ids: List[str], start_date: date, end_date: date) -> None:
+def _prime_selected_histories(scheme_ids: List[str], start_date: date, end_date: date) -> Dict[str, Exception]:
     tracked = [TRACKED_SCHEMES_BY_ID[scheme_id] for scheme_id in scheme_ids if scheme_id in TRACKED_SCHEMES_BY_ID]
     if not tracked:
-        return
+        return {}
 
     providers = {scheme.provider for scheme in tracked}
+    failures: Dict[str, Exception] = {}
 
     if "ASB" in providers:
         try:
             _ensure_asb_history(start_date, end_date)
-        except Exception:
-            pass
+        except Exception as exc:
+            for scheme in tracked:
+                if scheme.provider == "ASB":
+                    failures[scheme.id] = exc
 
     for scheme in tracked:
         if scheme.provider == "ANZ":
             try:
                 _ensure_anz_history(scheme.scheme, start_date, end_date)
-            except Exception:
-                pass
+            except Exception as exc:
+                failures[scheme.id] = exc
 
     if "Westpac" in providers:
         try:
             _ensure_westpac_history()
-        except Exception:
-            pass
+        except Exception as exc:
+            for scheme in tracked:
+                if scheme.provider == "Westpac":
+                    failures[scheme.id] = exc
+
+    return failures
 
 
 def _ensure_asb_history(start_date: date, end_date: date) -> None:
@@ -784,3 +816,28 @@ def _to_monthly_history(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         )
 
     return history
+
+
+def _raise_history_unavailable(
+    tracked_scheme,
+    start_date: date,
+    end_date: date,
+    failure: Exception | None = None,
+    minimum_points: int = 1,
+) -> None:
+    if failure is not None:
+        raise AnalysisDataUnavailableError(
+            f"Historical data for {tracked_scheme.display_name} could not be refreshed "
+            f"between {start_date.isoformat()} and {end_date.isoformat()}: {failure}"
+        )
+
+    if minimum_points <= 1:
+        raise AnalysisDataUnavailableError(
+            f"Historical data for {tracked_scheme.display_name} is unavailable "
+            f"between {start_date.isoformat()} and {end_date.isoformat()}."
+        )
+
+    raise AnalysisDataUnavailableError(
+        f"Not enough historical data is available to analyze {tracked_scheme.display_name} "
+        f"between {start_date.isoformat()} and {end_date.isoformat()}."
+    )

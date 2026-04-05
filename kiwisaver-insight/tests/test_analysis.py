@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from kiwisaver_insight.api import app
+from kiwisaver_insight.services.analysis_service import AnalysisDataUnavailableError
 
 client = TestClient(app)
 
@@ -247,6 +248,51 @@ def test_current_scheme_analysis_invalid_scheme(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert len(data["results"]) == 0
+
+
+def test_current_scheme_analysis_returns_502_when_data_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        "kiwisaver_insight.api.build_current_scheme_analysis",
+        lambda scheme_ids, years, initial_funds, monthly_contribution: (_ for _ in ()).throw(
+            AnalysisDataUnavailableError("ANZ source unavailable")
+        ),
+    )
+
+    response = client.post(
+        "/api/analysis/current-scheme",
+        json={
+            "scheme_ids": ["1"],
+            "years": 5,
+            "initial_funds": 10000,
+            "monthly_contribution": 500,
+        },
+    )
+
+    assert response.status_code == 502
+    assert "ANZ source unavailable" in response.json()["detail"]
+
+
+def test_strategy_backtest_returns_502_when_data_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        "kiwisaver_insight.api.simulate_strategy",
+        lambda conditions, initial_funds, monthly_contribution, years, selected_scheme: (_ for _ in ()).throw(
+            AnalysisDataUnavailableError("Strategy history unavailable")
+        ),
+    )
+
+    response = client.post(
+        "/api/strategy/backtest",
+        json={
+            "conditions": [],
+            "initial_funds": 10000,
+            "monthly_contribution": 500,
+            "years": 10,
+            "selected_scheme": "ASB Balanced Fund",
+        },
+    )
+
+    assert response.status_code == 502
+    assert "Strategy history unavailable" in response.json()["detail"]
 
 
 def test_strategy_backtest_time_based(monkeypatch):
